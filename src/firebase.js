@@ -9,12 +9,13 @@
 // Firestore Security Rules (see README.md), not by hiding this object.
 // ---------------------------------------------------------------------------
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyD99oOtXH3upbkGqZV6HcSsMDtcLcsyhMU",
+  authDomain: "realtime-database-b556c.firebaseapp.com",
+  databaseURL: "https://realtime-database-b556c-default-rtdb.firebaseio.com",
+  projectId: "realtime-database-b556c",
+  storageBucket: "realtime-database-b556c.firebasestorage.app",
+  messagingSenderId: "936320602614",
+  appId: "1:936320602614:web:c2917d110287c188cc37d7",
 };
 
 import { initializeApp } from "firebase/app";
