@@ -1,44 +1,85 @@
-// Firebase Realtime Database — shared storage for host + audience phones.
+// ---------------------------------------------------------------------------
+// PASTE YOUR FIREBASE CONFIG BELOW
+// ---------------------------------------------------------------------------
+// Get this from: Firebase Console -> Project Settings -> General ->
+// "Your apps" -> Web app -> SDK setup and configuration -> Config
 //
-// SETUP (one-time):
-// 1. Go to https://console.firebase.google.com → Create project
-// 2. Add a Web app → copy the firebaseConfig object
-// 3. Build → Realtime Database → Create database (start in test mode for setup)
-// 4. Paste your config values below (or use env vars with Vite: VITE_FIREBASE_*)
-// 5. Rules (Database → Rules) — for a simple gig app you can use:
-//
-//    {
-//      "rules": {
-//        "pubreq": {
-//          ".read": true,
-//          ".write": true
-//        }
-//      }
-//    }
-//
-//    (Anyone with the link can read/write. Fine for a trusted gig; lock down later.)
-
-import { initializeApp } from "firebase/app";
-import { getDatabase } from "firebase/database";
-
+// It is safe for these values to be public / committed to GitHub. Firebase
+// client config keys are not secrets — access control is handled by your
+// Firestore Security Rules (see README.md), not by hiding this object.
+// ---------------------------------------------------------------------------
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD99oOtXH3upbkGqZV6HcSsMDtcLcsyhMU",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "realtime-database-b556c.firebaseapp.com",
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || "https://realtime-database-b556c-default-rtdb.firebaseio.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "realtime-database-b556c",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "realtime-database-b556c.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "936320602614",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:936320602614:web:c2917d110287c188cc37d7",
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getDatabase(app);
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  onSnapshot,
+} from "firebase/firestore";
 
-export function isFirebaseConfigured() {
-  return (
-    firebaseConfig.apiKey &&
-    firebaseConfig.apiKey !== "YOUR_API_KEY" &&
-    firebaseConfig.databaseURL &&
-    !firebaseConfig.databaseURL.includes("YOUR_PROJECT")
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// All shared (cross-device) data lives in one Firestore collection, one
+// document per data key. Each document just holds a single "value" field
+// containing whatever JSON-serializable data that key needs (an object,
+// array, etc.) — this mirrors the original key/value storage shape closely
+// so the rest of the app didn't need to change.
+const COLLECTION = "pubSongRequests";
+
+export async function readShared(key, fallback) {
+  try {
+    const snap = await getDoc(doc(db, COLLECTION, key));
+    return snap.exists() ? snap.data().value : fallback;
+  } catch (e) {
+    console.error("Firestore read failed", key, e);
+    return fallback;
+  }
+}
+
+export async function writeShared(key, value) {
+  try {
+    await setDoc(doc(db, COLLECTION, key), { value });
+  } catch (e) {
+    console.error("Firestore write failed", key, e);
+  }
+}
+
+// Subscribe to live updates for one key. Calls `callback(value)` immediately
+// with the current value, then again every time it changes (from any device).
+// Returns an unsubscribe function — call it on cleanup.
+export function subscribeShared(key, fallback, callback) {
+  return onSnapshot(
+    doc(db, COLLECTION, key),
+    (snap) => callback(snap.exists() ? snap.data().value : fallback),
+    (err) => console.error("Firestore subscribe failed", key, err)
   );
+}
+
+// Personal (per-device) data never needs to sync between devices, so it just
+// lives in this browser's localStorage instead of Firestore.
+export function readPersonal(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function writePersonal(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error("localStorage write failed", key, e);
+  }
 }

@@ -1,9 +1,21 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Change this to your repo name if the site is at username.github.io/repo-name/
-// Leave as "/" only if using a custom domain or username.github.io root repo.
+// ---------------------------------------------------------------------------
+// IMPORTANT: set `base` to match your GitHub repository name before deploying.
+//
+// If your repo is named "my-band-app" and lives at:
+//   https://github.com/yourname/my-band-app
+// then your site will be served from:
+//   https://yourname.github.io/my-band-app/
+// so base should be:
+//   base: "/my-band-app/"
+//
+// EXCEPTION: if your repo is specifically named "yourname.github.io" (a
+// GitHub "user site"), your site is served from the root instead, so use:
+//   base: "/"
+// ---------------------------------------------------------------------------
 export default defineConfig({
   plugins: [react()],
-  base: "./",
+  base: "/pub-song-requests/",
 });
