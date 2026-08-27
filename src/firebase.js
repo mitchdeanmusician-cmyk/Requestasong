@@ -16,6 +16,7 @@ const firebaseConfig = {
   storageBucket: "realtime-database-b556c.firebasestorage.app",
   messagingSenderId: "936320602614",
   appId: "1:936320602614:web:c2917d110287c188cc37d7",
+  measurementId: "G-4JB1793QFR",
 };
 
 import { initializeApp } from "firebase/app";

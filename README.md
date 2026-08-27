@@ -1,67 +1,65 @@
 # Song Requests App
 
-A live song-request app for gigs, backed by Firebase (Firestore) so it works as a real
-standalone website — no Claude.ai required.
+A live song-request app for gigs, backed by Firebase (Firestore). This guide does
+**everything through the GitHub website** — no terminal, no installing anything on
+your computer. GitHub builds the app for you automatically in the cloud.
 
-This guide assumes no prior experience with any of this. Follow it top to bottom.
-
----
-
-## 1. Install Node.js (one-time)
-
-Download and install Node.js from **https://nodejs.org** (choose the "LTS" version).
-This gives you the `npm` command you'll use below.
-
-To check it worked, open a terminal (on Mac: Terminal app; on Windows: Command Prompt
-or PowerShell) and type:
-
-```
-node -v
-npm -v
-```
-
-You should see version numbers, not an error.
+> **Already deployed once and the site looked unstyled/basic?** That was a missing
+> piece (Tailwind CSS wasn't set up) — this version fixes it. Just re-upload
+> everything in this folder over your existing files on GitHub (Add file → Upload
+> files, same as before) and commit. The Actions workflow will rebuild
+> automatically with the fix included.
 
 ---
 
-## 2. Get this project onto your computer
+## 1. Edit one file before uploading: your Firebase config
 
-Unzip the folder you downloaded, and open a terminal **inside that folder**
-(on Mac, you can right-click the folder → "New Terminal at Folder"; on Windows,
-type `cmd` into the folder's address bar and press Enter).
+1. On your computer, open the file **`src/firebase.js`** from this folder in any
+   plain text editor (Notepad, TextEdit, VS Code — anything that opens `.js` files
+   as text).
+2. Go to the [Firebase Console](https://console.firebase.google.com), open your
+   project → gear icon → **Project settings** → scroll to **"Your apps"**.
+   If you don't have a Web app registered yet, click the `</>` icon to create one.
+3. Copy the `apiKey`, `authDomain`, `projectId`, etc. shown there, and paste them
+   into the `firebaseConfig` object at the top of `src/firebase.js`, replacing the
+   placeholder text.
+4. Save the file.
 
-Then install all the project's dependencies:
+(It's fine for these values to be public — they're not secret keys. Access control
+is handled by Firestore's security rules, set up in step 3 below.)
 
-```
-npm install
-```
-
-This creates a `node_modules` folder — that's normal, leave it alone.
+**Note:** `vite.config.js` is already set up correctly for your repo name
+(`Requestasong`) — you don't need to touch it.
 
 ---
 
-## 3. Connect your Firebase project
+## 2. Upload the project to GitHub
 
-You said you already have a Firebase project — good. You just need to plug its
-config into this project:
+1. Go to your repository on GitHub (`Requestasong`).
+2. Click **Add file → Upload files**.
+3. Drag your entire project folder's contents into the upload box — all of it:
+   `package.json`, `vite.config.js`, `index.html`, the `src` folder, and the
+   `.github` folder (this one is hidden by default on some computers — see the
+   note below if you don't see it).
+4. Scroll down and click **Commit changes**.
 
-1. Go to the [Firebase Console](https://console.firebase.google.com), open your project.
-2. Click the gear icon → **Project settings**.
-3. Scroll to **"Your apps"**. If you don't have a Web app yet, click the `</>` icon to
-   create one (you don't need Hosting — just register the app).
-4. You'll see a code block with `apiKey`, `authDomain`, etc. Copy those values.
-5. Open **`src/firebase.js`** in this project and paste your values into the
-   `firebaseConfig` object at the top. It's safe for these to be public/committed —
-   they're not secret keys.
+**If you can't see the `.github` folder to drag it in:** it's a hidden folder.
+On Mac, press `Cmd+Shift+.` in Finder to reveal hidden files/folders. On Windows,
+in File Explorer go to View → Show → Hidden items. If it's still tricky, you can
+create it by hand on GitHub instead: click **Add file → Create new file**, and
+for the filename type the full path `.github/workflows/deploy.yml` (GitHub will
+create the folders automatically) — then paste in the contents of that file from
+your project, and commit.
 
-### Turn on Firestore
+---
 
-In the Firebase Console sidebar: **Build → Firestore Database → Create database**.
-Choose **Production mode** (we'll set rules below), pick any region, and create it.
+## 3. Turn on Firestore and set security rules
 
-### Set Firestore security rules
+In the [Firebase Console](https://console.firebase.google.com), open your project:
 
-Still in Firestore, go to the **Rules** tab and replace the contents with:
+1. Sidebar → **Build → Firestore Database → Create database**. Choose
+   **Production mode**, pick any region, create it.
+2. Go to the **Rules** tab and replace the contents with:
 
 ```
 rules_version = '2';
@@ -74,81 +72,53 @@ service cloud.firestore {
 }
 ```
 
-**What this means:** anyone with your Firestore project ID could read or write this
-one collection. That's expected for a no-login app like this one — the setlist and
-requests are meant to be publicly writable (that's how strangers send you requests).
-Don't reuse this Firebase project for anything sensitive, and don't widen these rules
-beyond the `pubSongRequests` collection.
+**What this means:** anyone with your Firebase project details could read or write
+this one collection. That's expected for a no-login app like this — the setlist
+and requests are meant to be publicly writable (that's how strangers send you
+requests). Don't reuse this Firebase project for anything sensitive.
 
 ---
 
-## 4. Test it locally
+## 4. Turn on GitHub Pages (via GitHub Actions)
 
-```
-npm run dev
-```
-
-This prints a `localhost` URL — open it in your browser. You should see the app.
-Try uploading a CSV setlist and starting a session to confirm Firestore is actually
-connected (check the Firestore Console — you should see documents appearing under
-a `pubSongRequests` collection).
-
-Press `Ctrl+C` in the terminal to stop the local server when you're done testing.
+1. In your repo: **Settings → Pages**.
+2. Under "Build and deployment", set **Source** to **"GitHub Actions"**
+   (not "Deploy from a branch" — that's a different method).
+3. That's it — no need to select a branch here, the workflow file you uploaded
+   handles it.
 
 ---
 
-## 5. Put it on GitHub
+## 5. Watch it build
 
-1. Create a new repository on GitHub (e.g. `pub-song-requests`).
-2. Open **`vite.config.js`** in this project and set `base` to match your repo name
-   exactly — see the comment in that file for details.
-3. Push this project to that repository. If you're not familiar with git commands,
-   GitHub's own "Add file → Upload files" button in the browser works fine for a
-   first upload too — just drag in everything except the `node_modules` folder.
-
-If you're using git from the terminal instead:
+1. Click the **Actions** tab at the top of your repo.
+2. You should see a workflow run in progress (yellow dot), then a green checkmark
+   once it finishes — this usually takes 1–2 minutes.
+3. Once it's green, go back to **Settings → Pages** — you'll see your live URL:
 
 ```
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPO-NAME.git
-git push -u origin main
+https://mitchdeanmusician-cmyk.github.io/Requestasong/
 ```
+
+Open it. You should now see the actual app, not the README.
 
 ---
 
-## 6. Deploy to GitHub Pages
+## 6. Making changes later
 
-From inside the project folder:
-
-```
-npm run deploy
-```
-
-This builds the app and pushes it to a `gh-pages` branch automatically.
-
-Then on GitHub: go to your repo → **Settings → Pages**, and under "Build and
-deployment", set **Source** to "Deploy from a branch", branch **`gh-pages`**, folder
-**`/ (root)`**. Save.
-
-After a minute or two, your site will be live at:
-
-```
-https://YOUR-USERNAME.github.io/YOUR-REPO-NAME/
-```
-
-Whenever you make changes later, just run `npm run deploy` again to push an update.
+Any time you want to update the site (new code, settings, anything), just upload
+the changed file(s) again the same way (**Add file → Upload files**, or edit a
+file directly on GitHub using the pencil icon), and commit. The Actions workflow
+re-runs automatically and republishes the updated site within a couple of minutes.
+You can watch it happen in the **Actions** tab.
 
 ---
 
-## 7. Your QR code
+## Your QR code
 
 Once the site above is live, paste that URL into any free QR code generator (e.g.
 qr-code-generator.com) and print the result — that's the one you hand out at gigs.
-The in-app "Share your app" QR feature in Settings isn't needed for this setup;
-it was built for a different hosting scenario. Feel free to ignore it.
+The in-app "Share your app" QR feature in Settings isn't needed for this setup.
 
 ---
 
@@ -159,3 +129,12 @@ it was built for a different hosting scenario. Feel free to ignore it.
 - **Personal data** (your device's mute-alerts setting, which songs you've
   personally requested, your fire-reaction history) — stored in this browser's
   `localStorage`, so it stays local to each device and never leaves it.
+
+---
+
+## (Optional) Prefer a local terminal instead?
+
+If you ever do want to work locally with Node.js instead of the browser-only
+method above, this project also supports that — see the comments in
+`package.json` (`npm install`, `npm run dev`, `npm run deploy`). Not required
+for the GitHub Actions method above.
