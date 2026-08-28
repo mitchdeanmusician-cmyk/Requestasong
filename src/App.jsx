@@ -53,6 +53,8 @@ const KEYS = {
 const EMPTY_STATS = { songCounts: {}, missed: {}, namedCount: 0, anonCount: 0 };
 const PLAYED_COOLDOWN_MS = 15 * 60 * 1000;
 const MAX_PENDING_REQUESTS = 10;
+const MAX_PENDING_REQUESTS_LAST_CALL = 5;
+const MAX_ACTIVE_REQUESTS_PER_PERSON = 3;
 
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -63,7 +65,6 @@ const DEFAULT_CONFIG = {
   bandInstagram: "",
   tipLink: "",
   pin: "",
-  helperPin: "",
   setUp: false,
   requestsOpen: false,
   sessionActive: false,
@@ -188,7 +189,6 @@ export default function App() {
   const [requests, setRequests] = useState(null);
   const [view, setView] = useState("audience"); // audience | hostLogin | hostSetup | host
   const [loaded, setLoaded] = useState(false);
-  const [hostRole, setHostRole] = useState("owner"); // owner | helper
   const [reactions, setReactions] = useState({});
   const [muteAlerts, setMuteAlerts] = useState(false);
   const [myRequestedIds, setMyRequestedIds] = useState([]);
@@ -219,7 +219,6 @@ export default function App() {
   const [setupPersonalInsta, setSetupPersonalInsta] = useState("");
   const [setupBandInsta, setSetupBandInsta] = useState("");
   const [setupTip, setSetupTip] = useState("");
-  const [setupHelperPin, setSetupHelperPin] = useState("");
   const [setupBannerImageUrl, setSetupBannerImageUrl] = useState("");
   const [setupPin, setSetupPin] = useState("");
   const [setupSecQ1, setSetupSecQ1] = useState("");
@@ -349,8 +348,13 @@ export default function App() {
     const latest = await readShared(KEYS.requests, []);
     const birthday = isBirthdaySong(song.title);
     const pendingCountNow = latest.filter((r) => r.status === "pending").length;
-    if (!birthday && pendingCountNow >= MAX_PENDING_REQUESTS) {
-      setToast("Sorry! I have a lot of requests right now, try again in a few minutes");
+    const effectiveCap = config.lastCallActive ? MAX_PENDING_REQUESTS_LAST_CALL : MAX_PENDING_REQUESTS;
+    if (!birthday && pendingCountNow >= effectiveCap) {
+      setToast(
+        config.lastCallActive
+          ? "Last call — the queue's full for the rest of the night!"
+          : "Sorry! I have a lot of requests right now, try again in a few minutes"
+      );
       return;
     }
 
@@ -385,6 +389,16 @@ export default function App() {
     if (existingIdx >= 0 && myRequestedIds.includes(latest[existingIdx].id)) {
       setToast("You've already put this one in — sit tight!");
       return;
+    }
+
+    if (existingIdx < 0 && !birthday) {
+      const myActiveCount = latest.filter(
+        (r) => r.status === "pending" && myRequestedIds.includes(r.id)
+      ).length;
+      if (myActiveCount >= MAX_ACTIVE_REQUESTS_PER_PERSON) {
+        setToast(`You've got ${MAX_ACTIVE_REQUESTS_PER_PERSON} requests in already — wait for one to play before adding another`);
+        return;
+      }
     }
 
     let updated;
@@ -494,9 +508,14 @@ export default function App() {
 
     const preCheck = await readShared(KEYS.requests, []);
     const pendingCountNow = preCheck.filter((r) => r.status === "pending").length;
-    if (!isBirthdaySong(activeSong.title) && pendingCountNow >= MAX_PENDING_REQUESTS) {
+    const effectiveCap = latestConfig.lastCallActive ? MAX_PENDING_REQUESTS_LAST_CALL : MAX_PENDING_REQUESTS;
+    if (!isBirthdaySong(activeSong.title) && pendingCountNow >= effectiveCap) {
       setActiveSong(null);
-      setToast("Sorry! I have a lot of requests right now, try again in a few minutes");
+      setToast(
+        latestConfig.lastCallActive
+          ? "Last call — the queue's full for the rest of the night!"
+          : "Sorry! I have a lot of requests right now, try again in a few minutes"
+      );
       return;
     }
 
@@ -547,6 +566,18 @@ export default function App() {
       setSendState("idle");
       setToast("You've already put this one in — sit tight!");
       return;
+    }
+
+    if (existingIdx < 0 && !birthday) {
+      const myActiveCount = latest.filter(
+        (r) => r.status === "pending" && myRequestedIds.includes(r.id)
+      ).length;
+      if (myActiveCount >= MAX_ACTIVE_REQUESTS_PER_PERSON) {
+        setActiveSong(null);
+        setSendState("idle");
+        setToast(`You've got ${MAX_ACTIVE_REQUESTS_PER_PERSON} requests in already — wait for one to play before adding another`);
+        return;
+      }
     }
 
     let updated;
@@ -703,6 +734,7 @@ export default function App() {
       requestsOpen: false,
       pauseUntil: null,
       doneForNight: true,
+      lastCallActive: false,
     };
     await writeShared(KEYS.config, newConfig);
     setConfig(newConfig);
@@ -885,12 +917,6 @@ export default function App() {
   function submitPin() {
     const entered = pinInput.trim();
     if (entered === config.pin) {
-      setHostRole("owner");
-      setView("host");
-      setLoginError("");
-    } else if (config.helperPin && entered === config.helperPin) {
-      setHostRole("helper");
-      setHostTab("requests");
       setView("host");
       setLoginError("");
     } else {
@@ -1035,7 +1061,6 @@ export default function App() {
       tipLink: setupTip.trim() || config.tipLink,
       bannerImageUrl: setupBannerImageUrl.trim() || config.bannerImageUrl,
       pin: setupPin.trim() ? setupPin.trim() : config.pin,
-      helperPin: setupHelperPin.trim() || config.helperPin,
     };
     await writeShared(KEYS.config, newConfig);
     setConfig(newConfig);
@@ -1156,7 +1181,6 @@ export default function App() {
           duplicateSetlist={duplicateSetlist}
           updateSong={updateSong}
           toggleSongAvailability={toggleSongAvailability}
-          hostRole={hostRole}
           toggleLastCall={toggleLastCall}
           muteAlerts={muteAlerts}
           toggleMuteAlerts={toggleMuteAlerts}
@@ -1204,8 +1228,6 @@ export default function App() {
           setSetupSecQ3={setSetupSecQ3}
           setupSecA3={setupSecA3}
           setSetupSecA3={setSetupSecA3}
-          setupHelperPin={setupHelperPin}
-          setSetupHelperPin={setSetupHelperPin}
           setupBannerImageUrl={setupBannerImageUrl}
           setSetupBannerImageUrl={setSetupBannerImageUrl}
           saveSettings={saveSettings}
@@ -1231,13 +1253,9 @@ export default function App() {
             setSetupBandInsta("");
             setSetupTip("");
             setSetupBannerImageUrl("");
-            setSetupHelperPin("");
             setSetupPin("");
           }}
-          onLogout={() => {
-            setHostRole("owner");
-            setView("audience");
-          }}
+          onLogout={() => setView("audience")}
         />
       )}
 
@@ -2771,7 +2789,7 @@ function HostView({
   config, songs, setlists, requests,
   createSetlist, switchSetlist, renameSetlist, deleteSetlist, duplicateSetlist, updateSong, toggleSongAvailability,
   muteAlerts, toggleMuteAlerts, toggleAutoClear,
-  hostRole, toggleLastCall, reactions,
+  toggleLastCall, reactions,
   hostTab, setHostTab,
   showDone, setShowDone,
   markStatus, clearDone, clearAllRequests,
@@ -2785,7 +2803,6 @@ function HostView({
   setupSecQ1, setSetupSecQ1, setupSecA1, setSetupSecA1,
   setupSecQ2, setSetupSecQ2, setupSecA2, setSetupSecA2,
   setupSecQ3, setSetupSecQ3, setupSecA3, setSetupSecA3,
-  setupHelperPin, setSetupHelperPin,
   setupBannerImageUrl, setSetupBannerImageUrl,
   setTheme,
   saveSettings, savingSettings, settingsSaved,
@@ -2831,22 +2848,19 @@ function HostView({
     setHistory([]);
   }
 
-  const visibleTabs =
-    hostRole === "helper"
-      ? [{ id: "requests", label: "Requests", icon: Inbox, badge: pendingCount }]
-      : [
-          { id: "requests", label: "Requests", icon: Inbox, badge: pendingCount },
-          { id: "songs", label: "Setlist", icon: ListMusic },
-          { id: "history", label: "History", icon: History },
-          { id: "settings", label: "Settings", icon: Settings },
-        ];
+  const visibleTabs = [
+    { id: "requests", label: "Requests", icon: Inbox, badge: pendingCount },
+    { id: "songs", label: "Setlist", icon: ListMusic },
+    { id: "history", label: "History", icon: History },
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
 
   return (
     <div className="flex flex-col flex-1">
       <div className="px-4 pt-6 pb-3 flex items-center justify-between border-b border-line">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-amber mb-0.5">
-            {hostRole === "helper" ? "Helper mode" : "Stage mode"}
+            Stage mode
           </p>
           <h1 className="font-display text-xl">{config.bandName}</h1>
         </div>
@@ -3423,9 +3437,6 @@ function HostView({
             </Field>
             <Field label="Change PIN (leave blank to keep current)">
               <input value={setupPin} onChange={(e) => setSetupPin(e.target.value)} inputMode="numeric" type="password" placeholder="••••" className="w-full px-3 py-2.5 rounded-lg text-sm font-mono tracking-[0.2em]" />
-            </Field>
-            <Field label="Helper PIN — gives limited access (Requests tab only) to a bandmate (leave blank to keep current)">
-              <input value={setupHelperPin} onChange={(e) => setSetupHelperPin(e.target.value)} inputMode="numeric" type="password" placeholder="••••" className="w-full px-3 py-2.5 rounded-lg text-sm font-mono tracking-[0.2em]" />
             </Field>
             <button onClick={saveSettings} disabled={savingSettings} className="btn-amber w-full py-3 rounded-lg font-body flex items-center justify-center gap-2">
               {savingSettings ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
