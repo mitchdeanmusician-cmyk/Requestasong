@@ -36,7 +36,7 @@ import {
   Megaphone,
   ListPlus,
   Frown,
-  Guitar,
+  Home,
 } from "lucide-react";
 
 // ---------- storage keys ----------
@@ -467,8 +467,9 @@ export default function App() {
   }
 
   // log searches that come up empty while a session is live, debounced so we
-  // don't log on every keystroke. Also consolidates progressive typing (e.g.
-  // "Wic" -> "Wicked" -> "Wicked Game") into a single entry instead of one per pause.
+  // don't log on every keystroke. Consolidates one continuous search attempt —
+  // whether typed into the title field, the artist field, or both, in any
+  // order — into a single entry instead of a separate one per field/edit.
   useEffect(() => {
     if (!loaded || !config?.sessionActive) return;
     const t1 = queryTitle.trim();
@@ -483,15 +484,10 @@ export default function App() {
       const key = q.toLowerCase();
       const streak = missedStreakRef.current;
 
-      // if this looks like a continuation of the same typing session (same prefix,
-      // logged recently), remove the earlier partial entry instead of stacking a new one
-      if (
-        streak &&
-        streak.key !== key &&
-        Date.now() - streak.time < 15000 &&
-        (key.startsWith(streak.key) || streak.key.startsWith(key)) &&
-        stats.missed[streak.key]
-      ) {
+      // any edit within the last 15s counts as the same ongoing search attempt,
+      // regardless of which field changed or what order they were filled in —
+      // remove the earlier partial entry instead of stacking a new one
+      if (streak && streak.key !== key && Date.now() - streak.time < 15000 && stats.missed[streak.key]) {
         if (stats.missed[streak.key].count <= 1) {
           delete stats.missed[streak.key];
         } else {
@@ -3793,7 +3789,7 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
       )}
 
       {genreBreakdown.length > 1 && (
-        <StatAccordion id="genre" icon={Guitar} title="By genre" count={genreBreakdown.length}>
+        <StatAccordion id="genre" icon={ListMusic} title="By genre" count={genreBreakdown.length}>
           <ul className="flex flex-col gap-1.5">
             {genreBreakdown.map(([genre, count], i) => (
               <li key={i} className="song-row flex items-center justify-between px-3 py-2">
@@ -3806,7 +3802,7 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
       )}
 
       {venueBreakdown.length > 1 && (
-        <StatAccordion id="venue" title="By venue" count={venueBreakdown.length}>
+        <StatAccordion id="venue" icon={Home} title="By venue" count={venueBreakdown.length}>
           <ul className="flex flex-col gap-1.5">
             {venueBreakdown.map((v, i) => (
               <li key={i} className="song-row flex items-center justify-between px-3 py-2">
