@@ -2464,7 +2464,7 @@ function LoginView({ bandName, pinInput, setPinInput, loginError, onCancel, onSu
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         <KeyRound size={26} className="text-amber mb-3" />
         <p className="font-body text-sm text-cream/50 text-center max-w-[240px] mb-4">
-          No recovery question is set up yet. Open your Firestore console, find the "config" document, and edit the "pin" field directly — only you have access to that.
+          No recovery question is set up for this PIN. Contact your host to get it reset.
         </p>
         <button onClick={() => setStage("pin")} className="text-cream/40 text-sm font-body">
           Back
@@ -2875,6 +2875,7 @@ function HostView({
   const [newProfileName, setNewProfileName] = useState("");
   const [generatedProfileLink, setGeneratedProfileLink] = useState("");
   const [profileLinkCopied, setProfileLinkCopied] = useState(false);
+  const [switchProfileName, setSwitchProfileName] = useState("");
   const [editingSongId, setEditingSongId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [editArtist, setEditArtist] = useState("");
@@ -3555,6 +3556,32 @@ function HostView({
                     </p>
                   </div>
                 )}
+
+                <div className="mt-4 pt-4 border-t border-line">
+                  <p className="font-body text-xs font-semibold mb-1">Switch this device to another profile</p>
+                  <p className="font-body text-xs text-cream/40 mb-3">
+                    Jumps this browser to a different profile that already exists — you'll need to log in with that profile's own PIN.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      value={switchProfileName}
+                      onChange={(e) => setSwitchProfileName(e.target.value)}
+                      placeholder="Profile name — e.g. alex"
+                      className="flex-1 px-3 py-2 rounded-lg text-sm font-body"
+                    />
+                    <button
+                      onClick={() => {
+                        const sanitized = switchProfileName.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+                        if (!sanitized) return;
+                        const base = window.location.origin + window.location.pathname;
+                        window.location.href = `${base}?profile=${encodeURIComponent(sanitized)}`;
+                      }}
+                      className="btn-outline px-3 rounded-lg shrink-0"
+                    >
+                      Switch
+                    </button>
+                  </div>
+                </div>
               </StatAccordion>
             </div>
 
