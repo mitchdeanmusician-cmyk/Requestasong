@@ -58,7 +58,7 @@ const MAX_PENDING_REQUESTS = 10;
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 const DEFAULT_CONFIG = {
-  bandName: "Finding Light",
+  bandName: "",
   personalInstagram: "",
   bandInstagram: "",
   tipLink: "",
@@ -862,7 +862,7 @@ export default function App() {
     const newConfig = {
       ...DEFAULT_CONFIG,
       ...config,
-      bandName: setupBand.trim() || "The Band",
+      bandName: setupBand.trim(),
       personalInstagram: setupPersonalInsta.trim(),
       bandInstagram: setupBandInsta.trim(),
       tipLink: setupTip.trim(),
@@ -2104,7 +2104,7 @@ function AudienceView({
         onClick={onHostTap}
         className="mt-8 text-center text-xs font-mono text-cream/30 hover:text-cream/60 transition-colors"
       >
-        Musician? Tap here to manage
+        Tap here to manage stage view
       </button>
 
       {/* request modal */}
@@ -3406,9 +3406,6 @@ function HostView({
 
         {hostTab === "settings" && (
           <div>
-            <p className="font-body text-xs text-cream/40 mb-4">
-              These fields are blank on purpose — leave any of them empty to keep what's already saved, or type something new to change it.
-            </p>
             <Field label="Band / artist name (leave blank to keep current)">
               <input value={setupBand} onChange={(e) => setSetupBand(e.target.value)} className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
             </Field>
@@ -3476,10 +3473,6 @@ function HostView({
                 </button>
               </div>
             </div>
-
-            <p className="font-body text-xs text-cream/30 mt-4 leading-relaxed">
-              Heads up: the setlist, requests, and this info are stored so anyone with your app link can view them. Only the PIN stands between someone and this dashboard.
-            </p>
           </div>
         )}
       </div>
