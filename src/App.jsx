@@ -35,6 +35,8 @@ import {
   Eye,
   Megaphone,
   ListPlus,
+  Frown,
+  Guitar,
 } from "lucide-react";
 
 // ---------- storage keys ----------
@@ -162,6 +164,18 @@ function isBirthdaySong(title) {
   return /happy\s*birthday/i.test(title || "");
 }
 
+function computeAllTimeCounts(history) {
+  const allTime = {};
+  for (const entry of history || []) {
+    for (const key in entry.songCounts || {}) {
+      const s = entry.songCounts[key];
+      if (!allTime[key]) allTime[key] = { title: s.title, artist: s.artist, count: 0 };
+      allTime[key].count += s.count;
+    }
+  }
+  return allTime;
+}
+
 function sortPending(reqs) {
   return reqs
     .filter((r) => r.status === "pending")
@@ -203,6 +217,7 @@ export default function App() {
   const [sendState, setSendState] = useState("idle"); // idle | sending | sent
   const [toast, setToast] = useState(null);
   const [liveStats, setLiveStats] = useState(EMPTY_STATS);
+  const [allTimeCounts, setAllTimeCounts] = useState({});
   const [sessionRecap, setSessionRecap] = useState(null);
 
   // host state
@@ -257,6 +272,8 @@ export default function App() {
 
       setMuteAlerts(await readPersonal(KEYS.muteAlerts, false));
       setMyRequestedIds(await readPersonal(KEYS.myRequestedIds, []));
+      const history = await readShared(KEYS.history, []);
+      setAllTimeCounts(computeAllTimeCounts(history));
       setLoaded(true);
     })();
   }, []);
@@ -322,7 +339,7 @@ export default function App() {
   const songs = activeList ? activeList.songs : [];
   function songPopularity(title, artist) {
     const key = `${(title || "").toLowerCase()}||${(artist || "").toLowerCase()}`;
-    return liveStats.songCounts[key]?.count || 0;
+    return allTimeCounts[key]?.count || 0;
   }
   const availableSongs = songs
     .filter((s) => !s.unavailable)
@@ -708,6 +725,12 @@ export default function App() {
     };
     const updatedHistory = [entry, ...history].slice(0, 100);
     await writeShared(KEYS.history, updatedHistory);
+    setAllTimeCounts(computeAllTimeCounts(updatedHistory));
+
+    // clear the request queue now that the night is over, rather than waiting
+    // for the next "Start session" to wipe it
+    await writeShared(KEYS.requests, []);
+    setRequests([]);
 
     const newConfig = { ...config, sessionActive: false, requestsOpen: false, pauseUntil: null, doneForNight: false };
     await writeShared(KEYS.config, newConfig);
@@ -1055,11 +1078,11 @@ export default function App() {
     setSavingSettings(true);
     const newConfig = {
       ...config,
-      bandName: setupBand.trim() || config.bandName,
-      personalInstagram: setupPersonalInsta.trim() || config.personalInstagram,
-      bandInstagram: setupBandInsta.trim() || config.bandInstagram,
-      tipLink: setupTip.trim() || config.tipLink,
-      bannerImageUrl: setupBannerImageUrl.trim() || config.bannerImageUrl,
+      bandName: setupBand.trim(),
+      personalInstagram: setupPersonalInsta.trim(),
+      bandInstagram: setupBandInsta.trim(),
+      tipLink: setupTip.trim(),
+      bannerImageUrl: setupBannerImageUrl.trim(),
       pin: setupPin.trim() ? setupPin.trim() : config.pin,
     };
     await writeShared(KEYS.config, newConfig);
@@ -1248,11 +1271,11 @@ export default function App() {
           setVenueInput={setVenueInput}
           setTheme={setTheme}
           onOpenSettings={() => {
-            setSetupBand("");
-            setSetupPersonalInsta("");
-            setSetupBandInsta("");
-            setSetupTip("");
-            setSetupBannerImageUrl("");
+            setSetupBand(config.bandName || "");
+            setSetupPersonalInsta(config.personalInstagram || "");
+            setSetupBandInsta(config.bandInstagram || "");
+            setSetupTip(config.tipLink || "");
+            setSetupBannerImageUrl(config.bannerImageUrl || "");
             setSetupPin("");
           }}
           onLogout={() => setView("audience")}
@@ -1988,6 +2011,9 @@ function AudienceView({
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-amber">Now playing</p>
             <p className="font-body font-semibold text-sm truncate">{nowPlaying.title}</p>
+            {isBirthdaySong(nowPlaying.title) && nowPlaying.names && nowPlaying.names.length > 0 && (
+              <p className="font-body text-xs text-amber truncate">for {nowPlaying.names.join(", ")} 🎂</p>
+            )}
           </div>
           <button
             onClick={() => toggleReaction(nowPlaying.id)}
@@ -2039,6 +2065,9 @@ function AudienceView({
                     <div className="min-w-0">
                       <p className="font-body font-semibold text-[15px] truncate">{r.title}</p>
                       {r.artist && <p className="font-body text-xs text-cream/50 truncate">{r.artist}</p>}
+                      {isBirthdaySong(r.title) && r.names && r.names.length > 0 && (
+                        <p className="font-body text-xs text-amber truncate">for {r.names.join(", ")} 🎂</p>
+                      )}
                     </div>
                   </div>
                   {(r.count || 1) > 1 && (
@@ -2184,14 +2213,17 @@ function AudienceView({
                 />
                 {isBirthdaySong(activeSong.title) ? (
                   showWhenInput ? (
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-1.5">
                       <input
                         value={reqWhen}
                         onChange={(e) => setReqWhen(e.target.value)}
-                        placeholder="When? e.g. 'after this song', 'in 20 mins'"
+                        placeholder="When would you like it?"
                         className="w-full px-3 py-2.5 rounded-lg text-sm font-body"
                       />
-                      <div className="flex gap-2">
+                      <p className="font-body text-[11px] text-cream/40 px-1">
+                        e.g. "after this song", "in 20 mins", or "I'll come let you know"
+                      </p>
+                      <div className="flex gap-2 mt-0.5">
                         <button
                           onClick={() => setShowWhenInput(false)}
                           className="btn-outline flex-1 py-3 rounded-lg font-body"
@@ -2816,12 +2848,37 @@ function HostView({
   const done = requests.filter((r) => r.status === "done").sort((a, b) => b.ts - a.ts);
   const nowPlaying = requests.find((r) => r.status === "nowPlaying") || null;
   const [history, setHistory] = useState(null);
+  const [hostCountdown, setHostCountdown] = useState("");
+
+  useEffect(() => {
+    if (!config.pauseUntil) {
+      setHostCountdown("");
+      return;
+    }
+    const tick = () => {
+      const diff = config.pauseUntil - Date.now();
+      if (diff <= 0) {
+        setHostCountdown("any moment now");
+        return;
+      }
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setHostCountdown(mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [config.pauseUntil]);
+
   const [newSetlistName, setNewSetlistName] = useState("");
   const [addingSetlist, setAddingSetlist] = useState(false);
   const [renamingSetlist, setRenamingSetlist] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [confirmingStart, setConfirmingStart] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [newProfileName, setNewProfileName] = useState("");
+  const [generatedProfileLink, setGeneratedProfileLink] = useState("");
+  const [profileLinkCopied, setProfileLinkCopied] = useState(false);
   const [editingSongId, setEditingSongId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [editArtist, setEditArtist] = useState("");
@@ -2964,9 +3021,14 @@ function HostView({
                         <Flame size={13} fill="currentColor" /> {reactions[nowPlaying.id]}
                       </span>
                     )}
-                    <button onClick={() => markStatus(nowPlaying.id, "done")} className="btn-amber w-8 h-8 rounded-full flex items-center justify-center shrink-0">
-                      <Check size={14} />
-                    </button>
+                    {pending.length === 0 && (
+                      <button
+                        onClick={() => markStatus(nowPlaying.id, "done")}
+                        className="btn-amber px-3 py-1.5 rounded-full text-xs font-body shrink-0 flex items-center gap-1.5"
+                      >
+                        <Check size={13} /> Finished
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -2984,6 +3046,8 @@ function HostView({
                         ? "Audience can send you songs right now."
                         : config.doneForNight
                         ? "Audience sees a friendly 'that's a wrap' message — no more requests tonight."
+                        : config.pauseUntil
+                        ? `Back in about ${hostCountdown}. Audience can still ♥ a song to queue it up.`
                         : "Audience can still ♥ a song to queue it up, but won't get a live confirmation until you resume."}
                     </p>
                   </div>
@@ -3135,7 +3199,8 @@ function HostView({
                         )}
                         <p className="font-mono text-[10px] text-cream/30 mt-1.5">{timeAgo(r.ts)}</p>
                       </div>
-                      <div className="flex gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/40">Play now</span>
                         <button onClick={() => setNowPlaying(r.id)} className="btn-amber w-8 h-8 rounded-full flex items-center justify-center" aria-label="Mark as now playing">
                           <Play size={14} />
                         </button>
@@ -3420,19 +3485,19 @@ function HostView({
 
         {hostTab === "settings" && (
           <div>
-            <Field label="Band / artist name (leave blank to keep current)">
+            <Field label="Band / artist name">
               <input value={setupBand} onChange={(e) => setSetupBand(e.target.value)} className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
             </Field>
-            <Field label="Your personal Instagram (leave blank to keep current)">
+            <Field label="Your personal Instagram">
               <input value={setupPersonalInsta} onChange={(e) => setSetupPersonalInsta(e.target.value)} placeholder="@yourhandle" className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
             </Field>
-            <Field label="Band Instagram (leave blank to keep current)">
+            <Field label="Band Instagram">
               <input value={setupBandInsta} onChange={(e) => setSetupBandInsta(e.target.value)} placeholder="@thebandhandle" className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
             </Field>
-            <Field label="Tip link — Venmo, Cash App, or PayPal (leave blank to keep current)">
+            <Field label="Tip link — Venmo, Cash App, or PayPal">
               <input value={setupTip} onChange={(e) => setSetupTip(e.target.value)} placeholder="venmo.com/yourname" className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
             </Field>
-            <Field label="Banner image URL (leave blank to keep current)">
+            <Field label="Banner image URL">
               <input value={setupBannerImageUrl} onChange={(e) => setSetupBannerImageUrl(e.target.value)} placeholder="https://..." className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
             </Field>
             <Field label="Change PIN (leave blank to keep current)">
@@ -3448,12 +3513,62 @@ function HostView({
             </div>
 
             <div className="mt-6 pt-5 border-t border-line">
+              <StatAccordion icon={ListPlus} title="Add another profile">
+                <p className="font-body text-xs text-cream/40 mb-3 px-1">
+                  Generates a unique link for a bandmate to run their own completely separate setlist, PIN, and sessions — on this exact same site.
+                </p>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    value={newProfileName}
+                    onChange={(e) => {
+                      setNewProfileName(e.target.value);
+                      setGeneratedProfileLink("");
+                      setProfileLinkCopied(false);
+                    }}
+                    placeholder="Their name — e.g. alex"
+                    className="flex-1 px-3 py-2 rounded-lg text-sm font-body"
+                  />
+                  <button
+                    onClick={() => {
+                      const sanitized = newProfileName.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+                      if (!sanitized) return;
+                      const base = window.location.origin + window.location.pathname;
+                      setGeneratedProfileLink(`${base}?profile=${encodeURIComponent(sanitized)}`);
+                      setProfileLinkCopied(false);
+                    }}
+                    className="btn-amber px-3 rounded-lg shrink-0"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+                {generatedProfileLink && (
+                  <div className="song-row p-3 flex flex-col gap-2">
+                    <p className="font-mono text-[11px] text-cream/60 break-all">{generatedProfileLink}</p>
+                    <button
+                      onClick={async () => {
+                        await navigator.clipboard?.writeText(generatedProfileLink);
+                        setProfileLinkCopied(true);
+                      }}
+                      className="btn-outline px-3 py-1.5 rounded-full text-xs font-body flex items-center justify-center gap-1.5"
+                    >
+                      {profileLinkCopied ? <Check size={12} /> : <Copy size={12} />}
+                      {profileLinkCopied ? "Copied!" : "Copy link"}
+                    </button>
+                    <p className="font-body text-[10px] text-cream/30">
+                      Send this to them directly — the first time they open it, it'll walk them through their own one-time setup, completely separate from yours.
+                    </p>
+                  </div>
+                )}
+              </StatAccordion>
+            </div>
+
+            <div className="mt-6 pt-5 border-t border-line">
               <p className="font-body text-sm font-semibold mb-3">Alerts &amp; cleanup</p>
               <div className="flex items-center justify-between mb-3 px-3 py-3 rounded-xl bg-ink-card border border-line">
                 <div className="pr-3">
                   <p className="font-body text-sm font-semibold">New request vibration</p>
                   <p className="font-body text-xs text-cream/40 mt-0.5">
-                    Silent — just a vibration on this device when a new request comes in. No sound, ever.
+                    Silent — just a vibration on this device when a new request comes in.
                   </p>
                 </div>
                 <button
@@ -3608,7 +3723,7 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
 
   return (
     <div>
-      <StatAccordion id="top" icon={Music2} title="Top Ten All Time Requests" count={topAllTime.length} defaultOpen>
+      <StatAccordion id="top" icon={Music2} title="Top Ten All Time Requests" count={topAllTime.length}>
         <ul className="flex flex-col gap-1.5">
           {topAllTime.map((s, i) => (
             <li key={i} className="song-row flex items-center justify-between px-3 py-2">
@@ -3623,7 +3738,7 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
       </StatAccordion>
 
       {topFiresAllTime.length > 0 && (
-        <StatAccordion id="fires" icon={Flame} title="All-time crowd favorites" count={topFiresAllTime.length}>
+        <StatAccordion id="fires" icon={Flame} title="Crowd favorites" count={topFiresAllTime.length}>
           <ul className="flex flex-col gap-1.5">
             {topFiresAllTime.map((s, i) => (
               <li key={i} className="song-row flex items-center justify-between px-3 py-2">
@@ -3662,7 +3777,7 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
       )}
 
       {neverPlayed.length > 0 && (
-        <StatAccordion id="never" title="Never requested" count={neverPlayed.length}>
+        <StatAccordion id="never" icon={Frown} title="Never requested" count={neverPlayed.length}>
           <p className="font-body text-xs text-cream/40 mb-2">
             On your setlist, but nobody's asked for these yet.
           </p>
@@ -3678,7 +3793,7 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
       )}
 
       {genreBreakdown.length > 1 && (
-        <StatAccordion id="genre" title="By genre" count={genreBreakdown.length}>
+        <StatAccordion id="genre" icon={Guitar} title="By genre" count={genreBreakdown.length}>
           <ul className="flex flex-col gap-1.5">
             {genreBreakdown.map(([genre, count], i) => (
               <li key={i} className="song-row flex items-center justify-between px-3 py-2">
