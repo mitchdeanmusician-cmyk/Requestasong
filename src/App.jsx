@@ -60,7 +60,7 @@ const EMPTY_STATS = { songCounts: {}, missed: {}, namedCount: 0, anonCount: 0 };
 const PLAYED_COOLDOWN_MS = 15 * 60 * 1000;
 const MAX_PENDING_REQUESTS = 10;
 const MAX_PENDING_REQUESTS_LAST_CALL = 5;
-const MAX_ACTIVE_REQUESTS_PER_PERSON = 3;
+const MAX_ACTIVE_REQUESTS_PER_PERSON = 4;
 
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -1214,6 +1214,7 @@ export default function App() {
           songs={songs}
           setlists={setlists}
           profileRegistry={profileRegistry}
+          addSongFromMissed={addSongFromMissed}
           createSetlist={createSetlist}
           switchSetlist={switchSetlist}
           renameSetlist={renameSetlist}
@@ -1787,9 +1788,10 @@ function Shell({ children, theme = "retro" }) {
           background: var(--ink-raised);
           border: var(--card-border) solid var(--green);
           box-shadow: 0 0 12px rgba(57,255,20,0.2);
+          transform: translate(-50%, -50%);
           animation: toastIn 0.2s ease;
         }
-        @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        @keyframes toastIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
 
         .req-card {
           background: var(--ink-card);
@@ -2306,8 +2308,8 @@ function AudienceView({
       )}
 
       {toast && (
-        <div className="toast fixed bottom-6 left-1/2 px-4 py-2.5 rounded-full text-sm font-body flex items-center gap-2 z-50">
-          <Check size={14} className="text-green" />
+        <div className="toast fixed top-1/2 left-1/2 px-4 py-2.5 rounded-full text-sm font-body flex items-center gap-2 z-50 max-w-[85%] text-center">
+          <Check size={14} className="text-green shrink-0" />
           {toast}
         </div>
       )}
@@ -2835,7 +2837,7 @@ function ThemeDropdown({ config, setTheme }) {
 
 // ---------- Host dashboard ----------
 function HostView({
-  config, songs, setlists, requests, profileRegistry,
+  config, songs, setlists, requests, profileRegistry, addSongFromMissed,
   createSetlist, switchSetlist, renameSetlist, deleteSetlist, duplicateSetlist, updateSong, toggleSongAvailability,
   muteAlerts, toggleMuteAlerts, toggleAutoClear,
   toggleLastCall, reactions,
@@ -3495,7 +3497,7 @@ function HostView({
         )}
 
         {hostTab === "history" && (
-          <HistoryTab history={history} onDelete={deleteHistoryEntry} onClearAll={clearAllHistory} allSetlists={setlists} />
+          <HistoryTab history={history} onDelete={deleteHistoryEntry} onClearAll={clearAllHistory} allSetlists={setlists} onAddMissedSong={addSongFromMissed} />
         )}
 
         {hostTab === "settings" && (
@@ -3662,7 +3664,14 @@ function StatAccordion({ icon: Icon, title, count, children, defaultOpen = false
   );
 }
 
-function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
+function HistoryTab({ history, onDelete, onClearAll, allSetlists, onAddMissedSong }) {
+  const [addedFromHistory, setAddedFromHistory] = useState({});
+
+  function handleAddFromHistory(title) {
+    onAddMissedSong(title);
+    setAddedFromHistory((prev) => ({ ...prev, [title]: true }));
+  }
+
   const [expandedId, setExpandedId] = useState(null);
 
   if (history === null) {
@@ -3968,11 +3977,21 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists }) {
                   {missedList.length > 0 && (
                     <>
                       <p className="font-body text-xs font-semibold text-burgundy mt-2 mb-1.5">Songs searched you didn't have</p>
-                      <ul className="flex flex-col gap-1">
+                      <ul className="flex flex-col gap-1.5">
                         {missedList.map((m, i) => (
-                          <li key={i} className="flex items-center justify-between text-sm">
-                            <span className="font-body truncate">{m.query}</span>
-                            <span className="font-mono text-xs text-burgundy shrink-0 ml-2">×{m.count}</span>
+                          <li key={i} className="flex items-center justify-between gap-2 text-sm">
+                            <div className="min-w-0 flex items-center gap-2">
+                              <span className="font-body truncate">{m.query}</span>
+                              <span className="font-mono text-xs text-burgundy shrink-0">×{m.count}</span>
+                            </div>
+                            <button
+                              onClick={() => handleAddFromHistory(m.query)}
+                              disabled={addedFromHistory[m.query]}
+                              className="btn-outline shrink-0 px-2.5 py-1 rounded-full text-[11px] font-body flex items-center gap-1"
+                            >
+                              {addedFromHistory[m.query] ? <Check size={11} /> : <Plus size={11} />}
+                              {addedFromHistory[m.query] ? "Added" : "Add to setlist"}
+                            </button>
                           </li>
                         ))}
                       </ul>
