@@ -6,6 +6,10 @@ import {
   subscribeShared,
   readPersonal,
   writePersonal,
+  readGlobal,
+  writeGlobal,
+  subscribeGlobal,
+  PROFILE,
 } from "./firebase.js";
 import {
   Music2,
@@ -218,6 +222,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [liveStats, setLiveStats] = useState(EMPTY_STATS);
   const [allTimeCounts, setAllTimeCounts] = useState({});
+  const [profileRegistry, setProfileRegistry] = useState([]);
   const [sessionRecap, setSessionRecap] = useState(null);
 
   // host state
@@ -286,9 +291,24 @@ export default function App() {
       subscribeShared(KEYS.requests, [], setRequests),
       subscribeShared(KEYS.reactions, {}, setReactions),
       subscribeShared(KEYS.sessionStats, EMPTY_STATS, setLiveStats),
+      subscribeGlobal("profiles", [], setProfileRegistry),
     ];
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
+
+  // once this profile has actually been set up, make sure it's listed in the
+  // shared registry so it shows up as a tappable option for everyone else
+  useEffect(() => {
+    if (!config?.setUp) return;
+    (async () => {
+      const current = await readGlobal("profiles", []);
+      if (!current.includes(PROFILE)) {
+        const updated = [...current, PROFILE];
+        await writeGlobal("profiles", updated);
+        setProfileRegistry(updated);
+      }
+    })();
+  }, [config?.setUp]);
 
   // quietly clear out old "done" songs so the played list doesn't grow forever
   useEffect(() => {
@@ -1193,6 +1213,7 @@ export default function App() {
           config={config}
           songs={songs}
           setlists={setlists}
+          profileRegistry={profileRegistry}
           createSetlist={createSetlist}
           switchSetlist={switchSetlist}
           renameSetlist={renameSetlist}
@@ -2814,7 +2835,7 @@ function ThemeDropdown({ config, setTheme }) {
 
 // ---------- Host dashboard ----------
 function HostView({
-  config, songs, setlists, requests,
+  config, songs, setlists, requests, profileRegistry,
   createSetlist, switchSetlist, renameSetlist, deleteSetlist, duplicateSetlist, updateSong, toggleSongAvailability,
   muteAlerts, toggleMuteAlerts, toggleAutoClear,
   toggleLastCall, reactions,
@@ -2873,9 +2894,6 @@ function HostView({
   const [confirmingStart, setConfirmingStart] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
-  const [generatedProfileLink, setGeneratedProfileLink] = useState("");
-  const [profileLinkCopied, setProfileLinkCopied] = useState(false);
-  const [switchProfileName, setSwitchProfileName] = useState("");
   const [editingSongId, setEditingSongId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [editArtist, setEditArtist] = useState("");
@@ -3510,77 +3528,69 @@ function HostView({
             </div>
 
             <div className="mt-6 pt-5 border-t border-line">
-              <StatAccordion icon={ListPlus} title="Add another profile">
+              <StatAccordion icon={ListPlus} title="Profiles" count={profileRegistry.length || undefined}>
                 <p className="font-body text-xs text-cream/40 mb-3 px-1">
-                  Generates a unique link for a bandmate to run their own completely separate setlist, PIN, and sessions — on this exact same site.
+                  Everyone on this list shares this exact site, each with their own completely separate setlist, PIN, and sessions. Tap a name to switch this device there.
                 </p>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    value={newProfileName}
-                    onChange={(e) => {
-                      setNewProfileName(e.target.value);
-                      setGeneratedProfileLink("");
-                      setProfileLinkCopied(false);
-                    }}
-                    placeholder="Their name — e.g. alex"
-                    className="flex-1 px-3 py-2 rounded-lg text-sm font-body"
-                  />
-                  <button
-                    onClick={() => {
-                      const sanitized = newProfileName.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
-                      if (!sanitized) return;
-                      const base = window.location.origin + window.location.pathname;
-                      setGeneratedProfileLink(`${base}?profile=${encodeURIComponent(sanitized)}`);
-                      setProfileLinkCopied(false);
-                    }}
-                    className="btn-amber px-3 rounded-lg shrink-0"
-                  >
-                    <Plus size={16} />
-                  </button>
-                </div>
-                {generatedProfileLink && (
-                  <div className="song-row p-3 flex flex-col gap-2">
-                    <p className="font-mono text-[11px] text-cream/60 break-all">{generatedProfileLink}</p>
-                    <button
-                      onClick={async () => {
-                        await navigator.clipboard?.writeText(generatedProfileLink);
-                        setProfileLinkCopied(true);
-                      }}
-                      className="btn-outline px-3 py-1.5 rounded-full text-xs font-body flex items-center justify-center gap-1.5"
-                    >
-                      {profileLinkCopied ? <Check size={12} /> : <Copy size={12} />}
-                      {profileLinkCopied ? "Copied!" : "Copy link"}
-                    </button>
-                    <p className="font-body text-[10px] text-cream/30">
-                      Send this to them directly — the first time they open it, it'll walk them through their own one-time setup, completely separate from yours.
-                    </p>
+                {profileRegistry.length > 0 && (
+                  <div className="flex flex-col gap-1.5 mb-3">
+                    {profileRegistry.map((name) => (
+                      <div key={name} className="song-row flex items-center justify-between px-3 py-2.5">
+                        <p className="font-body text-sm truncate">
+                          {name}
+                          {name === PROFILE && <span className="text-amber font-mono text-[11px] ml-1.5">(you)</span>}
+                        </p>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={async () => {
+                              const base = window.location.origin + window.location.pathname;
+                              await navigator.clipboard?.writeText(`${base}?profile=${encodeURIComponent(name)}`);
+                            }}
+                            aria-label="Copy this profile's link"
+                            className="btn-outline w-8 h-8 rounded-full flex items-center justify-center"
+                          >
+                            <Copy size={13} />
+                          </button>
+                          {name !== PROFILE && (
+                            <button
+                              onClick={() => {
+                                const base = window.location.origin + window.location.pathname;
+                                window.location.href = `${base}?profile=${encodeURIComponent(name)}`;
+                              }}
+                              className="btn-amber px-3 py-1.5 rounded-full text-xs font-body"
+                            >
+                              Switch
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-
-                <div className="mt-4 pt-4 border-t border-line">
-                  <p className="font-body text-xs font-semibold mb-1">Switch this device to another profile</p>
-                  <p className="font-body text-xs text-cream/40 mb-3">
-                    Jumps this browser to a different profile that already exists — you'll need to log in with that profile's own PIN.
-                  </p>
+                <div className="pt-3 border-t border-line">
+                  <p className="font-body text-xs font-semibold mb-2">Add a new profile</p>
                   <div className="flex gap-2">
                     <input
-                      value={switchProfileName}
-                      onChange={(e) => setSwitchProfileName(e.target.value)}
-                      placeholder="Profile name — e.g. alex"
+                      value={newProfileName}
+                      onChange={(e) => setNewProfileName(e.target.value)}
+                      placeholder="Their name — e.g. alex"
                       className="flex-1 px-3 py-2 rounded-lg text-sm font-body"
                     />
                     <button
                       onClick={() => {
-                        const sanitized = switchProfileName.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+                        const sanitized = newProfileName.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
                         if (!sanitized) return;
                         const base = window.location.origin + window.location.pathname;
                         window.location.href = `${base}?profile=${encodeURIComponent(sanitized)}`;
                       }}
-                      className="btn-outline px-3 rounded-lg shrink-0"
+                      className="btn-amber px-3 rounded-lg shrink-0"
                     >
-                      Switch
+                      <Plus size={16} />
                     </button>
                   </div>
+                  <p className="font-body text-[10px] text-cream/30 mt-2">
+                    This switches this device straight there to do its one-time setup — once finished, it'll show up in this list for everyone, ready to tap.
+                  </p>
                 </div>
               </StatAccordion>
             </div>
