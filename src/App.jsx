@@ -1211,6 +1211,8 @@ export default function App() {
           sendRequest={sendRequest}
           onHostTap={tryHostEntry}
           toast={toast}
+          tipPrompt={tipPrompt}
+          setTipPrompt={setTipPrompt}
         />
       )}
 
@@ -1955,6 +1957,8 @@ function AudienceView({
   sendRequest,
   onHostTap,
   toast,
+  tipPrompt,
+  setTipPrompt,
 }) {
   const live = config.sessionActive && config.requestsOpen;
   const effectiveConfig = { ...config, requestsOpen: live };
