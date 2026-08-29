@@ -2030,6 +2030,7 @@ function AudienceView({
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-amber">Now playing</p>
             <p className="font-body font-semibold text-sm truncate">{nowPlaying.title}</p>
+            {nowPlaying.artist && <p className="font-body text-xs text-cream/60 truncate">{nowPlaying.artist}</p>}
             {isBirthdaySong(nowPlaying.title) && nowPlaying.names && nowPlaying.names.length > 0 && (
               <p className="font-body text-xs text-amber truncate">for {nowPlaying.names.join(", ")} 🎂</p>
             )}
@@ -3031,6 +3032,7 @@ function HostView({
                       <div className="min-w-0">
                         <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-amber">Now playing</p>
                         <p className="font-body font-semibold text-sm truncate">{nowPlaying.title}</p>
+                        {nowPlaying.artist && <p className="font-body text-xs text-cream/60 truncate">{nowPlaying.artist}</p>}
                       </div>
                     </div>
                     {(reactions?.[nowPlaying.id] || 0) > 0 && (
