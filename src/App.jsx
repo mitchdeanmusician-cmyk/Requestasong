@@ -70,6 +70,7 @@ const DEFAULT_CONFIG = {
   personalInstagram: "",
   bandInstagram: "",
   tipLink: "",
+  bookingLink: "",
   pin: "",
   setUp: false,
   requestsOpen: false,
@@ -220,6 +221,7 @@ export default function App() {
   const [reqWhen, setReqWhen] = useState("");
   const [sendState, setSendState] = useState("idle"); // idle | sending | sent
   const [toast, setToast] = useState(null);
+  const [tipPrompt, setTipPrompt] = useState(null); // { type: 'quick' | 'send', song }
   const [liveStats, setLiveStats] = useState(EMPTY_STATS);
   const [allTimeCounts, setAllTimeCounts] = useState({});
   const [profileRegistry, setProfileRegistry] = useState([]);
@@ -239,6 +241,7 @@ export default function App() {
   const [setupPersonalInsta, setSetupPersonalInsta] = useState("");
   const [setupBandInsta, setSetupBandInsta] = useState("");
   const [setupTip, setSetupTip] = useState("");
+  const [setupBookingLink, setSetupBookingLink] = useState("");
   const [setupBannerImageUrl, setSetupBannerImageUrl] = useState("");
   const [setupPin, setSetupPin] = useState("");
   const [setupSecQ1, setSetupSecQ1] = useState("");
@@ -373,7 +376,7 @@ export default function App() {
     await writePersonal(KEYS.myRequestedIds, updated);
   }
 
-  async function quickQueue(song) {
+  async function quickQueue(song, bypassPersonalLimit) {
     if (!config.sessionActive) {
       setToast("The band hasn't started their set yet — check back once they do!");
       return;
@@ -428,12 +431,16 @@ export default function App() {
       return;
     }
 
-    if (existingIdx < 0 && !birthday) {
+    if (existingIdx < 0 && !birthday && !bypassPersonalLimit) {
       const myActiveCount = latest.filter(
         (r) => r.status === "pending" && myRequestedIds.includes(r.id)
       ).length;
       if (myActiveCount >= MAX_ACTIVE_REQUESTS_PER_PERSON) {
-        setToast(`You've got ${MAX_ACTIVE_REQUESTS_PER_PERSON} requests in already — wait for one to play before adding another`);
+        if (config.tipLink) {
+          setTipPrompt({ type: "quick", song });
+        } else {
+          setToast(`You've got ${MAX_ACTIVE_REQUESTS_PER_PERSON} requests in already — wait for one to play before adding another`);
+        }
         return;
       }
     }
@@ -526,7 +533,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [queryTitle, queryArtist, loaded, config?.sessionActive, filteredSongs.length, availableSongs.length]);
 
-  async function sendRequest(timing) {
+  async function sendRequest(timing, bypassPersonalLimit) {
     if (!activeSong) return;
     const latestConfig = await readShared(KEYS.config, config);
     if (!latestConfig.sessionActive || !latestConfig.requestsOpen) {
@@ -601,14 +608,18 @@ export default function App() {
       return;
     }
 
-    if (existingIdx < 0 && !birthday) {
+    if (existingIdx < 0 && !birthday && !bypassPersonalLimit) {
       const myActiveCount = latest.filter(
         (r) => r.status === "pending" && myRequestedIds.includes(r.id)
       ).length;
       if (myActiveCount >= MAX_ACTIVE_REQUESTS_PER_PERSON) {
-        setActiveSong(null);
         setSendState("idle");
-        setToast(`You've got ${MAX_ACTIVE_REQUESTS_PER_PERSON} requests in already — wait for one to play before adding another`);
+        if (config.tipLink) {
+          setTipPrompt({ type: "send", timing });
+        } else {
+          setActiveSong(null);
+          setToast(`You've got ${MAX_ACTIVE_REQUESTS_PER_PERSON} requests in already — wait for one to play before adding another`);
+        }
         return;
       }
     }
@@ -807,6 +818,40 @@ export default function App() {
     setSetlists(updated);
   }
 
+  // copies every song from another existing setlist into the currently
+  // active one, skipping anything that's already there (matched by title +
+  // artist) — so you don't have to re-upload a CSV just to combine sets
+  async function importSongsFromSetlist(sourceId) {
+    const latestLists = await readShared(KEYS.setlists, setlists);
+    const source = latestLists.find((l) => l.id === sourceId);
+    const active = latestLists.find((l) => l.id === config.activeSetlistId);
+    if (!source || !active) return { added: 0, skipped: 0 };
+    const existingKeys = new Set(
+      (active.songs || []).map((s) => `${s.title.toLowerCase()}||${(s.artist || "").toLowerCase()}`)
+    );
+    let added = 0;
+    let skipped = 0;
+    const newSongs = [];
+    for (const s of source.songs || []) {
+      const key = `${s.title.toLowerCase()}||${(s.artist || "").toLowerCase()}`;
+      if (existingKeys.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      existingKeys.add(key);
+      newSongs.push({ ...s, id: uid() });
+      added += 1;
+    }
+    if (added > 0) {
+      const updated = latestLists.map((l) =>
+        l.id === config.activeSetlistId ? { ...l, songs: [...(l.songs || []), ...newSongs] } : l
+      );
+      await writeShared(KEYS.setlists, updated);
+      setSetlists(updated);
+    }
+    return { added, skipped };
+  }
+
   async function createSetlist(name) {
     const latestLists = await readShared(KEYS.setlists, setlists);
     const newList = { id: uid(), name: name.trim() || "New Setlist", songs: [] };
@@ -916,6 +961,7 @@ export default function App() {
       setSetupPersonalInsta(config.personalInstagram || "");
       setSetupBandInsta(config.bandInstagram || "");
       setSetupTip(config.tipLink || "");
+      setSetupBookingLink(config.bookingLink || "");
       setSetupPin("");
       setView("hostSetup");
     } else {
@@ -937,6 +983,7 @@ export default function App() {
       personalInstagram: setupPersonalInsta.trim(),
       bandInstagram: setupBandInsta.trim(),
       tipLink: setupTip.trim(),
+      bookingLink: setupBookingLink.trim(),
       pin: setupPin.trim(),
       securityQuestions: buildSecurityQuestions(setupSecQ1, setupSecA1, setupSecQ2, setupSecA2, setupSecQ3, setupSecA3),
       setUp: true,
@@ -1098,6 +1145,7 @@ export default function App() {
       personalInstagram: setupPersonalInsta.trim(),
       bandInstagram: setupBandInsta.trim(),
       tipLink: setupTip.trim(),
+      bookingLink: setupBookingLink.trim(),
       bannerImageUrl: setupBannerImageUrl.trim(),
       pin: setupPin.trim() ? setupPin.trim() : config.pin,
     };
@@ -1138,6 +1186,7 @@ export default function App() {
       {view === "audience" && (
         <AudienceView
           config={config}
+          profileRegistry={profileRegistry}
           songs={filteredSongs}
           allSongs={availableSongs}
           totalSongs={availableSongs.length}
@@ -1175,6 +1224,8 @@ export default function App() {
           setSetupBandInsta={setSetupBandInsta}
           setupTip={setupTip}
           setSetupTip={setSetupTip}
+          setupBookingLink={setupBookingLink}
+          setSetupBookingLink={setSetupBookingLink}
           setupPin={setupPin}
           setSetupPin={setSetupPin}
           setupSecQ1={setupSecQ1}
@@ -1218,6 +1269,7 @@ export default function App() {
           createSetlist={createSetlist}
           switchSetlist={switchSetlist}
           renameSetlist={renameSetlist}
+          importSongsFromSetlist={importSongsFromSetlist}
           deleteSetlist={deleteSetlist}
           duplicateSetlist={duplicateSetlist}
           updateSong={updateSong}
@@ -1255,6 +1307,8 @@ export default function App() {
           setSetupBandInsta={setSetupBandInsta}
           setupTip={setupTip}
           setSetupTip={setSetupTip}
+          setupBookingLink={setupBookingLink}
+          setSetupBookingLink={setSetupBookingLink}
           setupPin={setupPin}
           setSetupPin={setSetupPin}
           setupSecQ1={setupSecQ1}
@@ -1293,6 +1347,7 @@ export default function App() {
             setSetupPersonalInsta(config.personalInstagram || "");
             setSetupBandInsta(config.bandInstagram || "");
             setSetupTip(config.tipLink || "");
+            setSetupBookingLink(config.bookingLink || "");
             setSetupBannerImageUrl(config.bannerImageUrl || "");
             setSetupPin("");
           }}
@@ -1875,6 +1930,7 @@ function Shell({ children, theme = "retro" }) {
 // ---------- Audience view ----------
 function AudienceView({
   config,
+  profileRegistry,
   songs,
   allSongs,
   totalSongs,
@@ -1906,6 +1962,7 @@ function AudienceView({
   const [queueOpen, setQueueOpen] = useState(false);
   const [showWhenInput, setShowWhenInput] = useState(false);
   const [countdown, setCountdown] = useState("");
+  const [showProfilePicker, setShowProfilePicker] = useState(false);
 
   function isSongQueued(song) {
     return (queue || []).some(
@@ -1977,22 +2034,16 @@ function AudienceView({
               : "Not taking requests right now"}
           </span>
         </div>
-        {config.sessionActive ? (
-          <div className="mb-2">
-            {config.sessionVenue && (
-              <p className="font-display text-lg leading-snug break-words">
-                Hello! Welcome to <span className="text-amber">{config.sessionVenue}</span>
-              </p>
-            )}
-            <p className="font-display text-xl leading-snug break-words">
-              You are listening to <span className="text-amber">{config.bandName}</span>
+        <div className="mb-2">
+          {config.sessionActive && config.sessionVenue && (
+            <p className="font-display text-lg leading-snug break-words">
+              Hello! Welcome to <span className="text-amber">{config.sessionVenue}</span>
             </p>
-          </div>
-        ) : (
-          <h1 className="font-pixel text-lg leading-snug break-words">
-            {config.bandName}
-          </h1>
-        )}
+          )}
+          <p className="font-display text-xl leading-snug break-words">
+            You are listening to <span className="text-amber">{config.bandName}</span>
+          </p>
+        </div>
         <div className="flex gap-2 mt-4">
           {config.personalInstagram && (
             <button
@@ -2022,6 +2073,16 @@ function AudienceView({
             </button>
           )}
         </div>
+
+        {config.bookingLink && (
+          <button
+            onClick={() => goTo(normalizeUrl(config.bookingLink))}
+            className="btn-outline w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-full text-xs font-body"
+          >
+            <Megaphone size={13} className="shrink-0" />
+            Need a band for your event? Book us here!
+          </button>
+        )}
       </div>
 
       {nowPlaying && (
@@ -2035,13 +2096,16 @@ function AudienceView({
               <p className="font-body text-xs text-amber truncate">for {nowPlaying.names.join(", ")} 🎂</p>
             )}
           </div>
-          <button
-            onClick={() => toggleReaction(nowPlaying.id)}
-            className="btn-amber shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-body"
-          >
-            <Flame size={13} fill="currentColor" />
-            {(reactions && reactions[nowPlaying.id]) || 0}
-          </button>
+          <div className="flex flex-col items-center gap-1 shrink-0">
+            <span className="font-body text-[9px] text-cream/50 whitespace-nowrap">Like what you're hearing?</span>
+            <button
+              onClick={() => toggleReaction(nowPlaying.id)}
+              className="btn-amber flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-body"
+            >
+              <Flame size={13} fill="currentColor" />
+              {(reactions && reactions[nowPlaying.id]) || 0}
+            </button>
+          </div>
         </div>
       )}
 
@@ -2173,6 +2237,40 @@ function AudienceView({
       >
         Tap here to manage stage view
       </button>
+
+      {profileRegistry && profileRegistry.length > 1 && (
+        <div className="mt-2 flex flex-col items-center">
+          <button
+            onClick={() => setShowProfilePicker((v) => !v)}
+            className="text-center text-[11px] font-mono text-cream/20 hover:text-cream/50 transition-colors"
+          >
+            Switch profile
+          </button>
+          {showProfilePicker && (
+            <div className="mt-2 w-full max-w-xs song-row p-2 flex flex-col gap-1">
+              {profileRegistry.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => {
+                    if (name === PROFILE) {
+                      setShowProfilePicker(false);
+                      return;
+                    }
+                    const base = window.location.origin + window.location.pathname;
+                    window.location.href = `${base}?profile=${encodeURIComponent(name)}`;
+                  }}
+                  className={`w-full px-3 py-2 rounded-lg text-sm font-body text-left flex items-center justify-between ${
+                    name === PROFILE ? "text-amber" : "text-cream/70 hover:text-cream"
+                  }`}
+                >
+                  {name}
+                  {name === PROFILE && <span className="font-mono text-[10px]">(here)</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* request modal */}
       {activeSong && (
@@ -2312,6 +2410,35 @@ function AudienceView({
         <div className="toast fixed top-1/2 left-1/2 px-4 py-2.5 rounded-full text-sm font-body flex items-center gap-2 z-50 max-w-[85%] text-center">
           <Check size={14} className="text-green shrink-0" />
           {toast}
+        </div>
+      )}
+
+      {tipPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 modal-backdrop">
+          <div className="modal-card w-full max-w-xs rounded-2xl p-5 text-center">
+            <HeartHandshake size={26} className="text-amber mx-auto mb-3" />
+            <p className="font-display text-lg mb-1">You've got {MAX_ACTIVE_REQUESTS_PER_PERSON} in already!</p>
+            <p className="font-body text-sm text-cream/60 mb-5">
+              Want to add another? Leave the band a tip and go ahead.
+            </p>
+            <button
+              onClick={() => {
+                window.open(normalizeUrl(config.tipLink), "_blank");
+                if (tipPrompt.type === "quick") {
+                  quickQueue(tipPrompt.song, true);
+                } else if (tipPrompt.type === "send") {
+                  sendRequest(tipPrompt.timing, true);
+                }
+                setTipPrompt(null);
+              }}
+              className="btn-amber w-full py-2.5 rounded-lg font-body mb-2 flex items-center justify-center gap-1.5"
+            >
+              <HeartHandshake size={14} /> Tip & add another
+            </button>
+            <button onClick={() => setTipPrompt(null)} className="text-cream/40 text-sm font-body">
+              No thanks
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -2712,6 +2839,7 @@ function SetupView({
   setupPersonalInsta, setSetupPersonalInsta,
   setupBandInsta, setSetupBandInsta,
   setupTip, setSetupTip,
+  setupBookingLink, setSetupBookingLink,
   setupPin, setSetupPin,
   setupSecQ1, setSetupSecQ1, setupSecA1, setSetupSecA1,
   setupSecQ2, setSetupSecQ2, setupSecA2, setSetupSecA2,
@@ -2735,6 +2863,9 @@ function SetupView({
       </Field>
       <Field label="Tip link — Venmo, Cash App, or PayPal (optional)">
         <input value={setupTip} onChange={(e) => setSetupTip(e.target.value)} placeholder="venmo.com/yourname" className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
+      </Field>
+      <Field label="Booking link — shows a 'Book us!' button to the audience (optional)">
+        <input value={setupBookingLink} onChange={(e) => setSetupBookingLink(e.target.value)} placeholder="yourwebsite.com/booking" className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
       </Field>
       <Field label="Choose a PIN (4+ digits)">
         <input value={setupPin} onChange={(e) => setSetupPin(e.target.value)} inputMode="numeric" type="password" placeholder="••••" className="w-full px-3 py-2.5 rounded-lg text-sm font-mono tracking-[0.2em]" />
@@ -2839,7 +2970,7 @@ function ThemeDropdown({ config, setTheme }) {
 // ---------- Host dashboard ----------
 function HostView({
   config, songs, setlists, requests, profileRegistry, addSongFromMissed,
-  createSetlist, switchSetlist, renameSetlist, deleteSetlist, duplicateSetlist, updateSong, toggleSongAvailability,
+  createSetlist, switchSetlist, renameSetlist, deleteSetlist, duplicateSetlist, importSongsFromSetlist, updateSong, toggleSongAvailability,
   muteAlerts, toggleMuteAlerts, toggleAutoClear,
   toggleLastCall, reactions,
   hostTab, setHostTab,
@@ -2851,7 +2982,7 @@ function HostView({
   setupBand, setSetupBand,
   setupPersonalInsta, setSetupPersonalInsta,
   setupBandInsta, setSetupBandInsta,
-  setupTip, setSetupTip, setupPin, setSetupPin,
+  setupTip, setSetupTip, setupBookingLink, setSetupBookingLink, setupPin, setSetupPin,
   setupSecQ1, setSetupSecQ1, setupSecA1, setSetupSecA1,
   setupSecQ2, setSetupSecQ2, setupSecA2, setSetupSecA2,
   setupSecQ3, setSetupSecQ3, setupSecA3, setSetupSecA3,
@@ -2894,6 +3025,8 @@ function HostView({
   const [addingSetlist, setAddingSetlist] = useState(false);
   const [renamingSetlist, setRenamingSetlist] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [importSourceId, setImportSourceId] = useState("");
+  const [importResult, setImportResult] = useState(null);
   const [confirmingStart, setConfirmingStart] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
@@ -3375,6 +3508,48 @@ function HostView({
                   )}
                 </div>
               )}
+
+              {setlists && setlists.length > 1 && (
+                <div className="mt-3 pt-3 border-t border-line">
+                  <p className="font-body text-xs font-semibold mb-2">Import songs from another setlist</p>
+                  <div className="flex gap-2">
+                    <select
+                      value={importSourceId}
+                      onChange={(e) => {
+                        setImportSourceId(e.target.value);
+                        setImportResult(null);
+                      }}
+                      className="flex-1 px-3 py-2 rounded-lg text-sm font-body"
+                    >
+                      <option value="">Choose a setlist…</option>
+                      {setlists
+                        .filter((l) => l.id !== config.activeSetlistId)
+                        .map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name} ({(l.songs || []).length} songs)
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={async () => {
+                        if (!importSourceId) return;
+                        const result = await importSongsFromSetlist(importSourceId);
+                        setImportResult(result);
+                      }}
+                      disabled={!importSourceId}
+                      className="btn-amber px-3 rounded-lg shrink-0 disabled:opacity-40"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  {importResult && (
+                    <p className="font-body text-[11px] text-cream/50 mt-2">
+                      Added {importResult.added} song{importResult.added !== 1 ? "s" : ""}
+                      {importResult.skipped > 0 ? `, skipped ${importResult.skipped} already on this list.` : "."}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="border border-dashed border-line rounded-xl p-4 mb-5 text-center">
@@ -3515,6 +3690,9 @@ function HostView({
             </Field>
             <Field label="Tip link — Venmo, Cash App, or PayPal">
               <input value={setupTip} onChange={(e) => setSetupTip(e.target.value)} placeholder="venmo.com/yourname" className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
+            </Field>
+            <Field label="Booking link — shows a 'Book us!' button to the audience">
+              <input value={setupBookingLink} onChange={(e) => setSetupBookingLink(e.target.value)} placeholder="yourwebsite.com/booking" className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
             </Field>
             <Field label="Banner image URL">
               <input value={setupBannerImageUrl} onChange={(e) => setSetupBannerImageUrl(e.target.value)} placeholder="https://..." className="w-full px-3 py-2.5 rounded-lg text-sm font-body" />
