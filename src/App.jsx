@@ -1054,6 +1054,13 @@ export default function App() {
     setRequests(updated);
   }
 
+  async function deleteRequest(id) {
+    const latest = await readShared(KEYS.requests, []);
+    const updated = latest.filter((r) => r.id !== id);
+    await writeShared(KEYS.requests, updated);
+    setRequests(updated);
+  }
+
   async function clearDone() {
     const latest = await readShared(KEYS.requests, []);
     const updated = latest.filter((r) => r.status !== "done");
@@ -1311,6 +1318,7 @@ export default function App() {
           showDone={showDone}
           setShowDone={setShowDone}
           markStatus={markStatus}
+          deleteRequest={deleteRequest}
           clearDone={clearDone}
           clearAllRequests={clearAllRequests}
           pendingCount={pendingCount}
@@ -3031,7 +3039,7 @@ function HostView({
   toggleLastCall, reactions,
   hostTab, setHostTab,
   showDone, setShowDone,
-  markStatus, clearDone, clearAllRequests,
+  markStatus, deleteRequest, clearDone, clearAllRequests,
   pendingCount,
   fileInputRef, handleCsvUpload, csvError,
   manualTitle, setManualTitle, manualArtist, setManualArtist, manualGenre, setManualGenre, addManualSong, removeSong,
@@ -3418,6 +3426,17 @@ function HostView({
                         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/40">Play now</span>
                         <button onClick={() => setNowPlaying(r.id)} className="btn-amber w-8 h-8 rounded-full flex items-center justify-center" aria-label="Mark as now playing">
                           <Play size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Remove "${r.title}" from the queue?`)) {
+                              deleteRequest(r.id);
+                            }
+                          }}
+                          className="btn-outline w-8 h-8 rounded-full flex items-center justify-center text-cream/40 hover:text-burgundy"
+                          aria-label="Remove this request"
+                        >
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </div>
