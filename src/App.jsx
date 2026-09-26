@@ -54,6 +54,8 @@ const KEYS = {
   reactions: "pubreq:reactions",
   muteAlerts: "pubreq:muteAlerts",
   myRequestedIds: "pubreq:myRequestedIds",
+  pinAttempts: "pubreq:pinAttempts",
+  pinLockoutUntil: "pubreq:pinLockoutUntil",
 };
 
 const EMPTY_STATS = { songCounts: {}, missed: {}, namedCount: 0, anonCount: 0 };
@@ -61,6 +63,8 @@ const PLAYED_COOLDOWN_MS = 15 * 60 * 1000;
 const MAX_PENDING_REQUESTS = 10;
 const MAX_PENDING_REQUESTS_LAST_CALL = 5;
 const MAX_ACTIVE_REQUESTS_PER_PERSON = 4;
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_LOCKOUT_MS = 60 * 1000;
 
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -1000,13 +1004,33 @@ export default function App() {
     setView("host");
   }
 
-  function submitPin() {
+  async function submitPin() {
+    const now = Date.now();
+    const lockoutUntil = await readPersonal(KEYS.pinLockoutUntil, 0);
+    if (lockoutUntil && now < lockoutUntil) {
+      const secs = Math.ceil((lockoutUntil - now) / 1000);
+      setLoginError(`Too many wrong tries. Try again in ${secs}s.`);
+      return;
+    }
+
     const entered = pinInput.trim();
     if (entered === config.pin) {
+      await writePersonal(KEYS.pinAttempts, 0);
+      await writePersonal(KEYS.pinLockoutUntil, 0);
       setView("host");
       setLoginError("");
+      return;
+    }
+
+    const attempts = (await readPersonal(KEYS.pinAttempts, 0)) + 1;
+    if (attempts >= MAX_PIN_ATTEMPTS) {
+      const until = now + PIN_LOCKOUT_MS;
+      await writePersonal(KEYS.pinLockoutUntil, until);
+      await writePersonal(KEYS.pinAttempts, 0);
+      setLoginError(`Too many wrong tries. Try again in ${Math.ceil(PIN_LOCKOUT_MS / 1000)}s.`);
     } else {
-      setLoginError("Wrong PIN. Try again.");
+      await writePersonal(KEYS.pinAttempts, attempts);
+      setLoginError(`Wrong PIN. Try again. (${MAX_PIN_ATTEMPTS - attempts} tries left)`);
     }
   }
 
@@ -2545,8 +2569,24 @@ function LoginView({ bandName, pinInput, setPinInput, loginError, onCancel, onSu
   const [newPin, setNewPin] = useState("");
   const [newPinError, setNewPinError] = useState("");
   const [questionIndex, setQuestionIndex] = useState(null);
+  const [lockoutSecs, setLockoutSecs] = useState(0);
 
   const hasQuestions = securityQuestions && securityQuestions.length > 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const until = await readPersonal(KEYS.pinLockoutUntil, 0);
+      const remaining = Math.ceil((until - Date.now()) / 1000);
+      if (!cancelled) setLockoutSecs(remaining > 0 ? remaining : 0);
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, []);
 
   function startRecovery() {
     if (!hasQuestions) {
@@ -2584,6 +2624,7 @@ function LoginView({ bandName, pinInput, setPinInput, loginError, onCancel, onSu
   }
 
   if (stage === "pin") {
+    const locked = lockoutSecs > 0;
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         <KeyRound size={26} className="text-amber mb-3" />
@@ -2595,13 +2636,24 @@ function LoginView({ bandName, pinInput, setPinInput, loginError, onCancel, onSu
           inputMode="numeric"
           value={pinInput}
           onChange={(e) => setPinInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
+          onKeyDown={(e) => e.key === "Enter" && !locked && onSubmit()}
           placeholder="PIN"
-          className="w-full max-w-[220px] text-center tracking-[0.3em] px-3 py-3 rounded-lg text-lg font-mono mb-3"
+          disabled={locked}
+          className="w-full max-w-[220px] text-center tracking-[0.3em] px-3 py-3 rounded-lg text-lg font-mono mb-3 disabled:opacity-50"
         />
-        {loginError && <p className="text-burgundy text-sm font-body mb-3">{loginError}</p>}
-        <button onClick={onSubmit} className="btn-amber w-full max-w-[220px] py-2.5 rounded-lg font-body mb-2">
-          Enter
+        {locked ? (
+          <p className="text-burgundy text-sm font-body mb-3 text-center">
+            Too many wrong tries. Try again in {lockoutSecs}s.
+          </p>
+        ) : (
+          loginError && <p className="text-burgundy text-sm font-body mb-3 text-center">{loginError}</p>
+        )}
+        <button
+          onClick={onSubmit}
+          disabled={locked}
+          className="btn-amber w-full max-w-[220px] py-2.5 rounded-lg font-body mb-2 disabled:opacity-50"
+        >
+          {locked ? `Locked (${lockoutSecs}s)` : "Enter"}
         </button>
         <button onClick={onCancel} className="text-cream/40 text-sm font-body mb-6">
           Back to requests
@@ -3051,6 +3103,13 @@ function HostView({
   async function deleteHistoryEntry(id) {
     const latest = await readShared(KEYS.history, []);
     const updated = latest.filter((entry) => entry.id !== id);
+    await writeShared(KEYS.history, updated);
+    setHistory(updated);
+  }
+
+  async function renameHistoryEntry(id, newVenue) {
+    const latest = await readShared(KEYS.history, []);
+    const updated = latest.map((entry) => (entry.id === id ? { ...entry, venue: newVenue.trim() } : entry));
     await writeShared(KEYS.history, updated);
     setHistory(updated);
   }
@@ -3678,7 +3737,7 @@ function HostView({
         )}
 
         {hostTab === "history" && (
-          <HistoryTab history={history} onDelete={deleteHistoryEntry} onClearAll={clearAllHistory} allSetlists={setlists} onAddMissedSong={addSongFromMissed} />
+          <HistoryTab history={history} onDelete={deleteHistoryEntry} onRename={renameHistoryEntry} onClearAll={clearAllHistory} allSetlists={setlists} onAddMissedSong={addSongFromMissed} />
         )}
 
         {hostTab === "settings" && (
@@ -3848,7 +3907,7 @@ function StatAccordion({ icon: Icon, title, count, children, defaultOpen = false
   );
 }
 
-function HistoryTab({ history, onDelete, onClearAll, allSetlists, onAddMissedSong }) {
+function HistoryTab({ history, onDelete, onRename, onClearAll, allSetlists, onAddMissedSong }) {
   const [addedFromHistory, setAddedFromHistory] = useState({});
 
   function handleAddFromHistory(title) {
@@ -3857,6 +3916,8 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists, onAddMissedSon
   }
 
   const [expandedId, setExpandedId] = useState(null);
+  const [renamingEntryId, setRenamingEntryId] = useState(null);
+  const [renameEntryValue, setRenameEntryValue] = useState("");
 
   if (history === null) {
     return (
@@ -4080,15 +4141,62 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists, onAddMissedSon
           const entryAnon = entry.anonCount || 0;
           return (
             <li key={entry.id} className="song-row overflow-hidden">
-              <button
+              <div
                 onClick={() => setExpandedId(isOpen ? null : entry.id)}
-                className="w-full text-left px-3 py-2.5"
+                className="w-full text-left px-3 py-2.5 cursor-pointer"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-body text-sm font-semibold truncate">
-                      {entry.venue || "Unnamed gig"}
-                    </p>
+                    {renamingEntryId === entry.id ? (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          autoFocus
+                          value={renameEntryValue}
+                          onChange={(e) => setRenameEntryValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              onRename(entry.id, renameEntryValue);
+                              setRenamingEntryId(null);
+                            } else if (e.key === "Escape") {
+                              setRenamingEntryId(null);
+                            }
+                          }}
+                          placeholder="Venue name"
+                          className="px-2 py-1 rounded-lg text-sm font-body flex-1 min-w-0"
+                        />
+                        <button
+                          onClick={() => {
+                            onRename(entry.id, renameEntryValue);
+                            setRenamingEntryId(null);
+                          }}
+                          className="btn-amber w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                        >
+                          <Check size={12} />
+                        </button>
+                        <button
+                          onClick={() => setRenamingEntryId(null)}
+                          className="btn-outline w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="font-body text-sm font-semibold truncate flex items-center gap-1.5">
+                        {entry.venue || "Unnamed gig"}
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenameEntryValue(entry.venue || "");
+                            setRenamingEntryId(entry.id);
+                          }}
+                          role="button"
+                          aria-label="Rename this gig"
+                          className="text-cream/25 hover:text-amber shrink-0"
+                        >
+                          <Settings size={11} />
+                        </span>
+                      </p>
+                    )}
                     <span className="font-mono text-[11px] text-cream/40">
                       {date.toLocaleDateString()}
                     </span>
@@ -4121,7 +4229,7 @@ function HistoryTab({ history, onDelete, onClearAll, allSetlists, onAddMissedSon
                     {entryBirthdays > 0 && <span>🎂 {entryBirthdays}</span>}
                   </p>
                 )}
-              </button>
+              </div>
               {isOpen && (
                 <div className="px-3 pb-3 pt-1 border-t border-line">
                   <p className="font-body text-xs font-semibold text-amber mt-2 mb-1.5">Requested</p>
