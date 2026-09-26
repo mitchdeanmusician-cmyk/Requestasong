@@ -4200,8 +4200,10 @@ function HistoryTab({ history, onDelete, onRename, onClearAll, allSetlists, onAd
                         </button>
                       </div>
                     ) : (
-                      <p className="font-body text-sm font-semibold truncate flex items-center gap-1.5">
-                        {entry.venue || "Unnamed gig"}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="font-body text-sm font-semibold truncate min-w-0">
+                          {entry.venue || "Unnamed gig"}
+                        </p>
                         <span
                           onClick={(e) => {
                             e.stopPropagation();
@@ -4214,7 +4216,7 @@ function HistoryTab({ history, onDelete, onRename, onClearAll, allSetlists, onAd
                         >
                           <Settings size={11} />
                         </span>
-                      </p>
+                      </div>
                     )}
                     <span className="font-mono text-[11px] text-cream/40">
                       {date.toLocaleDateString()}
