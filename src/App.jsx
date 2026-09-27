@@ -62,7 +62,7 @@ const EMPTY_STATS = { songCounts: {}, missed: {}, namedCount: 0, anonCount: 0 };
 const PLAYED_COOLDOWN_MS = 15 * 60 * 1000;
 const MAX_PENDING_REQUESTS = 10;
 const MAX_PENDING_REQUESTS_LAST_CALL = 5;
-const MAX_ACTIVE_REQUESTS_PER_PERSON = 4;
+const MAX_ACTIVE_REQUESTS_PER_PERSON = 2;
 const MAX_PIN_ATTEMPTS = 5;
 const PIN_LOCKOUT_MS = 60 * 1000;
 
