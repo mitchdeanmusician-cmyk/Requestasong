@@ -60,7 +60,8 @@ const MAX_PENDING_REQUESTS = 10;
 const MAX_PENDING_REQUESTS_LAST_CALL = 5;
 const MAX_ACTIVE_REQUESTS_PER_PERSON = 2;
 const MAX_PIN_ATTEMPTS = 5;
-const PIN_LOCKOUT_MS = 60 * 1000;
+// each further wrong guess after the free tries locks things for longer
+const PIN_LOCKOUT_STEPS_MS = [60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000];
 
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -95,6 +96,15 @@ function buildSecurityQuestions(q1, a1, q2, a2, q3, a3) {
   ]
     .filter(([q, a]) => q.trim() && a.trim())
     .map(([q, a]) => ({ question: q.trim(), answer: a.trim() }));
+}
+
+function formatWait(total) {
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m ${String(sec).padStart(2, "0")}s`;
+  return `${sec}s`;
 }
 
 function timeAgo(ts) {
@@ -993,12 +1003,29 @@ export default function App() {
     setView("host");
   }
 
+  // Wrong PIN guesses AND wrong security-question answers all count toward the
+  // same lockout, which gets longer each time: 1 min, 5 min, 15 min, then 1 hour.
+  async function currentLockoutMs() {
+    const until = await readPersonal(KEYS.pinLockoutUntil, 0);
+    return Math.max(0, until - Date.now());
+  }
+
+  async function recordFailedAttempt() {
+    const failures = (await readPersonal(KEYS.pinAttempts, 0)) + 1;
+    await writePersonal(KEYS.pinAttempts, failures);
+    if (failures >= MAX_PIN_ATTEMPTS) {
+      const step = Math.min(failures - MAX_PIN_ATTEMPTS, PIN_LOCKOUT_STEPS_MS.length - 1);
+      const ms = PIN_LOCKOUT_STEPS_MS[step];
+      await writePersonal(KEYS.pinLockoutUntil, Date.now() + ms);
+      return { locked: true, ms, triesLeft: 0 };
+    }
+    return { locked: false, ms: 0, triesLeft: MAX_PIN_ATTEMPTS - failures };
+  }
+
   async function submitPin() {
-    const now = Date.now();
-    const lockoutUntil = await readPersonal(KEYS.pinLockoutUntil, 0);
-    if (lockoutUntil && now < lockoutUntil) {
-      const secs = Math.ceil((lockoutUntil - now) / 1000);
-      setLoginError(`Too many wrong tries. Try again in ${secs}s.`);
+    const waitMs = await currentLockoutMs();
+    if (waitMs > 0) {
+      setLoginError(`Too many wrong tries. Try again in ${formatWait(Math.ceil(waitMs / 1000))}.`);
       return;
     }
 
@@ -1011,26 +1038,29 @@ export default function App() {
       return;
     }
 
-    const attempts = (await readPersonal(KEYS.pinAttempts, 0)) + 1;
-    if (attempts >= MAX_PIN_ATTEMPTS) {
-      const until = now + PIN_LOCKOUT_MS;
-      await writePersonal(KEYS.pinLockoutUntil, until);
-      await writePersonal(KEYS.pinAttempts, 0);
-      setLoginError(`Too many wrong tries. Try again in ${Math.ceil(PIN_LOCKOUT_MS / 1000)}s.`);
+    const result = await recordFailedAttempt();
+    if (result.locked) {
+      setLoginError(`Too many wrong tries. Try again in ${formatWait(Math.ceil(result.ms / 1000))}.`);
     } else {
-      await writePersonal(KEYS.pinAttempts, attempts);
-      setLoginError(`Wrong PIN. Try again. (${MAX_PIN_ATTEMPTS - attempts} tries left)`);
+      setLoginError(`Wrong PIN. Try again. (${result.triesLeft} tries left)`);
     }
   }
 
+  // returns true on success, "locked" if locked out (or just got locked out), false for a wrong answer
   async function resetPinWithAnswer(questionIndex, answer, newPin) {
+    if ((await currentLockoutMs()) > 0) return "locked";
     const q = (config.securityQuestions || [])[questionIndex];
     const correct = q && answer.trim().toLowerCase() === (q.answer || "").trim().toLowerCase();
-    if (!correct) return false;
+    if (!correct) {
+      const result = await recordFailedAttempt();
+      return result.locked ? "locked" : false;
+    }
     if (!newPin || newPin.trim().length < 4) return false;
     const newConfig = { ...config, pin: newPin.trim() };
     await writeShared(KEYS.config, newConfig);
     setConfig(newConfig);
+    await writePersonal(KEYS.pinAttempts, 0);
+    await writePersonal(KEYS.pinLockoutUntil, 0);
     return true;
   }
 
@@ -2048,27 +2078,25 @@ function AudienceView({
 
       {/* header */}
       <div className="pt-8 pb-5 border-b border-line">
-        <div className="flex items-center gap-2.5 mb-1.5">
-          <span className={live ? "pulse-dot" : "paused-dot"} />
-          <span className="font-mono text-sm font-semibold uppercase tracking-[0.2em] text-cream/80">
-            {config.sessionActive
-              ? live
-                ? "Taking requests now"
-                : config.doneForNight
-                ? "Not taking more requests tonight"
-                : "Taking a quick break"
-              : "Not taking requests right now"}
-          </span>
-        </div>
+        {live && (
+          <div className="mb-1.5">
+            <span className="font-mono text-sm font-semibold uppercase tracking-[0.2em] text-cream/80">
+              Taking requests now
+            </span>
+          </div>
+        )}
         <div className="mb-2">
           {config.sessionActive && config.sessionVenue && (
             <p className="font-display text-lg leading-snug break-words">
               Hello! Welcome to <span className="text-amber">{config.sessionVenue}</span>
             </p>
           )}
-          <p className="font-display text-xl leading-snug break-words">
-            You are listening to <span className="text-amber">{config.bandName}</span>
-          </p>
+          <div className="flex items-start gap-2.5">
+            <span className={`${live ? "pulse-dot" : "paused-dot"} shrink-0 mt-[9px]`} />
+            <p className="font-display text-xl leading-snug break-words min-w-0">
+              You are listening to <span className="text-amber">{config.bandName}</span>
+            </p>
+          </div>
         </div>
         <div className="flex gap-2 mt-4">
           {config.personalInstagram && (
@@ -2282,7 +2310,8 @@ function AudienceView({
 
       <button
         onClick={onHostTap}
-        className="mt-8 text-center text-xs font-mono text-cream/30 hover:text-cream/60 transition-colors"
+        className="mt-8 self-center px-4 py-4 text-center font-mono"
+        style={{ fontSize: "9px", opacity: 0.2 }}
       >
         Tap here to manage stage view
       </button>
@@ -2640,9 +2669,14 @@ function LoginView({ bandName, pinInput, setPinInput, loginError, onCancel, onSu
       setNewPinError("Choose a PIN with at least 4 digits.");
       return;
     }
-    const success = await onResetWithAnswer(questionIndex, answer, newPin);
-    if (success) {
+    const result = await onResetWithAnswer(questionIndex, answer, newPin);
+    if (result === true) {
       setStage("done");
+    } else if (result === "locked") {
+      setStage("pin");
+      setAnswer("");
+      setNewPin("");
+      setNewPinError("");
     } else {
       setNewPinError("That answer doesn't match. Double-check and try again.");
       setStage("question");
@@ -2670,7 +2704,7 @@ function LoginView({ bandName, pinInput, setPinInput, loginError, onCancel, onSu
         />
         {locked ? (
           <p className="text-burgundy text-sm font-body mb-3 text-center">
-            Too many wrong tries. Try again in {lockoutSecs}s.
+            Too many wrong tries. Try again in {formatWait(lockoutSecs)}.
           </p>
         ) : (
           loginError && <p className="text-burgundy text-sm font-body mb-3 text-center">{loginError}</p>
@@ -2680,13 +2714,13 @@ function LoginView({ bandName, pinInput, setPinInput, loginError, onCancel, onSu
           disabled={locked}
           className="btn-amber w-full max-w-[220px] py-2.5 rounded-lg font-body mb-2 disabled:opacity-50"
         >
-          {locked ? `Locked (${lockoutSecs}s)` : "Enter"}
+          {locked ? `Locked (${formatWait(lockoutSecs)})` : "Enter"}
         </button>
         <button onClick={onCancel} className="text-cream/40 text-sm font-body mb-6">
           Back to requests
         </button>
 
-        <button onClick={startRecovery} className="text-cream/30 text-xs font-mono">
+        <button onClick={startRecovery} disabled={locked} className="text-cream/30 text-xs font-mono disabled:opacity-40">
           Reset PIN
         </button>
       </div>
