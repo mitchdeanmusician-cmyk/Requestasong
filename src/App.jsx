@@ -2029,11 +2029,12 @@ function AudienceView({
   return (
     <div className="flex flex-col flex-1 px-4 pb-10">
       {config.lastCallActive && (
-        <div className="mt-6 px-3.5 py-3 rounded-lg bg-amber-soft border-2 border-amber flex items-center gap-2.5">
-          <Megaphone size={18} className="text-amber shrink-0" />
-          <p className="font-body text-sm font-semibold">
-            Last call! Get your final requests in for the night 🎤
-          </p>
+        <div className="mt-6 px-4 py-4 rounded-xl bg-amber-soft border-2 border-amber flex items-center gap-3.5">
+          <Megaphone size={32} className="text-amber shrink-0" />
+          <div className="min-w-0">
+            <p className="font-display text-2xl leading-tight uppercase">Last call!</p>
+            <p className="font-body text-base font-semibold">Get your final requests in for the night 🎤</p>
+          </div>
         </div>
       )}
 
@@ -2111,42 +2112,65 @@ function AudienceView({
       </div>
 
       {nowPlaying && (
-        <div className="mt-4 px-3.5 py-3 rounded-lg bg-amber-soft border-2 border-amber flex items-center gap-2.5">
-          <Play size={16} className="text-amber shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-amber">Now playing</p>
-            <p className="font-body font-semibold text-sm truncate">{nowPlaying.title}</p>
-            {nowPlaying.artist && <p className="font-body text-xs text-cream/60 truncate">{nowPlaying.artist}</p>}
-            {isBirthdaySong(nowPlaying.title) && nowPlaying.names && nowPlaying.names.length > 0 && (
-              <p className="font-body text-xs text-amber truncate">for {nowPlaying.names.join(", ")} 🎂</p>
-            )}
+        <div className="mt-4 px-4 py-4 rounded-xl bg-amber-soft border-2 border-amber">
+          <div className="flex items-center gap-3">
+            <Play size={28} className="text-amber shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-mono text-xs uppercase tracking-[0.15em] text-amber">Now playing</p>
+              <p className="font-display text-xl leading-snug break-words">{nowPlaying.title}</p>
+              {nowPlaying.artist && <p className="font-body text-base text-cream/70 break-words">{nowPlaying.artist}</p>}
+              {isBirthdaySong(nowPlaying.title) && nowPlaying.names && nowPlaying.names.length > 0 && (
+                <p className="font-body text-base text-amber break-words">for {nowPlaying.names.join(", ")} 🎂</p>
+              )}
+            </div>
           </div>
-          <div className="flex flex-col items-center gap-1 shrink-0">
-            <span className="font-body text-[9px] text-cream/50 whitespace-nowrap">Like what you're hearing?</span>
+          <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-3">
+            <span className="font-body text-base font-semibold">Like what you're hearing?</span>
             <button
               onClick={() => toggleReaction(nowPlaying.id)}
-              className="btn-amber flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-body"
+              className="btn-amber shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-base font-body font-semibold"
             >
-              <Flame size={13} fill="currentColor" />
+              <Flame size={20} fill="currentColor" />
               {(reactions && reactions[nowPlaying.id]) || 0}
             </button>
           </div>
         </div>
       )}
 
-      {!live && (
-        <div className="mt-4 px-3 py-2.5 rounded-lg bg-ink-card border border-line">
-          <p className="font-body text-sm text-cream/60">
-            {config.sessionActive
-              ? config.doneForNight
-                ? "That's a wrap on requests for tonight — thanks for playing along! Feel free to browse the setlist or drop a tip."
-                : config.pauseUntil
-                ? `The band's taking a quick break — back in about ${countdown}. Feel free to browse the setlist, ♥ a song to queue it up for when they're back, or drop a tip.`
-                : "The band's taking a short break from requests — check back shortly. Feel free to browse the setlist, ♥ a song to queue it up for when they're back, or drop a tip."
-              : "The band hasn't started taking requests yet — check back once they're live. Feel free to browse the setlist or drop a tip."}
-          </p>
-        </div>
-      )}
+      {!live && (() => {
+        let headline, detail;
+        let showTimer = false;
+        if (config.sessionActive) {
+          if (config.doneForNight) {
+            headline = "That's a wrap on requests for tonight!";
+            detail = "Thanks for playing along! Feel free to browse the setlist or drop a tip.";
+          } else if (config.pauseUntil) {
+            headline = "The band's taking a quick break";
+            detail = "Feel free to browse the setlist, ♥ a song to queue it up for when they're back, or drop a tip.";
+            showTimer = true;
+          } else {
+            headline = "The band's taking a short break";
+            detail = "Check back shortly. Feel free to browse the setlist, ♥ a song to queue it up for when they're back, or drop a tip.";
+          }
+        } else {
+          headline = "The band hasn't started taking requests yet";
+          detail = "Check back once they're live. Feel free to browse the setlist or drop a tip.";
+        }
+        return (
+          <div className="mt-4 px-4 py-5 rounded-xl bg-amber-soft border-2 border-amber text-center">
+            <p className="font-display text-2xl leading-snug break-words">{headline}</p>
+            {showTimer && countdown && (
+              <div className="mt-3">
+                <p className="font-mono text-xs uppercase tracking-[0.15em] text-cream/60">
+                  {countdown === "any moment now" ? "Back" : "Back in about"}
+                </p>
+                <p className="font-display text-4xl text-amber leading-tight">{countdown}</p>
+              </div>
+            )}
+            <p className="font-body text-base text-cream/80 mt-3">{detail}</p>
+          </div>
+        );
+      })()}
 
       {/* live queue — separate from song browsing */}
       {queue.length > 0 && (
