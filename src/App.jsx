@@ -683,6 +683,7 @@ export default function App() {
       sessionVenue: venueInput.trim(),
       pauseUntil: null,
       doneForNight: false,
+      lastCallActive: false,
     };
     await writeShared(KEYS.config, newConfig);
     await writeShared(KEYS.sessionStats, EMPTY_STATS);
@@ -742,9 +743,18 @@ export default function App() {
     await writeShared(KEYS.requests, []);
     setRequests([]);
 
-    const newConfig = { ...config, sessionActive: false, requestsOpen: false, pauseUntil: null, doneForNight: false };
+    const newConfig = {
+      ...config,
+      sessionActive: false,
+      requestsOpen: false,
+      pauseUntil: null,
+      doneForNight: false,
+      lastCallActive: false,
+    };
     await writeShared(KEYS.config, newConfig);
     setConfig(newConfig);
+    setPauseMinutes(null);
+    setPauseChoosingDuration(false);
     setVenueInput("");
   }
 
