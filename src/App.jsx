@@ -6,10 +6,6 @@ import {
   subscribeShared,
   readPersonal,
   writePersonal,
-  readGlobal,
-  writeGlobal,
-  subscribeGlobal,
-  PROFILE,
 } from "./firebase.js";
 import {
   Music2,
@@ -226,9 +222,9 @@ export default function App() {
   const [sendState, setSendState] = useState("idle"); // idle | sending | sent
   const [toast, setToast] = useState(null);
   const [tipPrompt, setTipPrompt] = useState(null); // { type: 'quick' | 'send', song }
+  const [cooldownInfo, setCooldownInfo] = useState(null); // { title, availableAt }
   const [liveStats, setLiveStats] = useState(EMPTY_STATS);
   const [allTimeCounts, setAllTimeCounts] = useState({});
-  const [profileRegistry, setProfileRegistry] = useState([]);
   const [sessionRecap, setSessionRecap] = useState(null);
 
   // host state
@@ -298,24 +294,9 @@ export default function App() {
       subscribeShared(KEYS.requests, [], setRequests),
       subscribeShared(KEYS.reactions, {}, setReactions),
       subscribeShared(KEYS.sessionStats, EMPTY_STATS, setLiveStats),
-      subscribeGlobal("profiles", [], setProfileRegistry),
     ];
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
-
-  // once this profile has actually been set up, make sure it's listed in the
-  // shared registry so it shows up as a tappable option for everyone else
-  useEffect(() => {
-    if (!config?.setUp) return;
-    (async () => {
-      const current = await readGlobal("profiles", []);
-      if (!current.includes(PROFILE)) {
-        const updated = [...current, PROFILE];
-        await writeGlobal("profiles", updated);
-        setProfileRegistry(updated);
-      }
-    })();
-  }, [config?.setUp]);
 
   // quietly clear out old "done" songs so the played list doesn't grow forever
   useEffect(() => {
@@ -420,8 +401,7 @@ export default function App() {
       });
       if (recentlyPlayed) {
         const playedAt = recentlyPlayed.playedAt || recentlyPlayed.ts;
-        const remaining = Math.ceil((PLAYED_COOLDOWN_MS - (Date.now() - playedAt)) / 60000);
-        setToast(`Just played that one — try again in ${remaining} min`);
+        setCooldownInfo({ title: song.title, availableAt: playedAt + PLAYED_COOLDOWN_MS });
         return;
       }
     }
@@ -595,10 +575,9 @@ export default function App() {
       });
       if (recentlyPlayed) {
         const playedAt = recentlyPlayed.playedAt || recentlyPlayed.ts;
-        const remaining = Math.ceil((PLAYED_COOLDOWN_MS - (Date.now() - playedAt)) / 60000);
         setActiveSong(null);
         setSendState("idle");
-        setToast(`Just played that one — try again in ${remaining} min`);
+        setCooldownInfo({ title: activeSong.title, availableAt: playedAt + PLAYED_COOLDOWN_MS });
         return;
       }
     }
@@ -806,7 +785,7 @@ export default function App() {
     const latest = await readShared(KEYS.requests, []);
     const updated = latest.map((r) => {
       if (r.id === id) return { ...r, status: "nowPlaying" };
-      if (r.status === "nowPlaying") return { ...r, status: "done" };
+      if (r.status === "nowPlaying") return { ...r, status: "done", playedAt: Date.now() };
       return r;
     });
     await writeShared(KEYS.requests, updated);
@@ -1217,7 +1196,6 @@ export default function App() {
       {view === "audience" && (
         <AudienceView
           config={config}
-          profileRegistry={profileRegistry}
           songs={filteredSongs}
           allSongs={availableSongs}
           totalSongs={availableSongs.length}
@@ -1244,6 +1222,8 @@ export default function App() {
           toast={toast}
           tipPrompt={tipPrompt}
           setTipPrompt={setTipPrompt}
+          cooldownInfo={cooldownInfo}
+          setCooldownInfo={setCooldownInfo}
         />
       )}
 
@@ -1297,7 +1277,6 @@ export default function App() {
           config={config}
           songs={songs}
           setlists={setlists}
-          profileRegistry={profileRegistry}
           addSongFromMissed={addSongFromMissed}
           createSetlist={createSetlist}
           switchSetlist={switchSetlist}
@@ -1964,7 +1943,6 @@ function Shell({ children, theme = "retro" }) {
 // ---------- Audience view ----------
 function AudienceView({
   config,
-  profileRegistry,
   songs,
   allSongs,
   totalSongs,
@@ -1991,6 +1969,8 @@ function AudienceView({
   toast,
   tipPrompt,
   setTipPrompt,
+  cooldownInfo,
+  setCooldownInfo,
 }) {
   const live = config.sessionActive && config.requestsOpen;
   const effectiveConfig = { ...config, requestsOpen: live };
@@ -1998,7 +1978,6 @@ function AudienceView({
   const [queueOpen, setQueueOpen] = useState(false);
   const [showWhenInput, setShowWhenInput] = useState(false);
   const [countdown, setCountdown] = useState("");
-  const [showProfilePicker, setShowProfilePicker] = useState(false);
 
   function isSongQueued(song) {
     return (queue || []).some(
@@ -2274,40 +2253,6 @@ function AudienceView({
         Tap here to manage stage view
       </button>
 
-      {profileRegistry && profileRegistry.length > 1 && (
-        <div className="mt-2 flex flex-col items-center">
-          <button
-            onClick={() => setShowProfilePicker((v) => !v)}
-            className="text-center text-[11px] font-mono text-cream/20 hover:text-cream/50 transition-colors"
-          >
-            Switch profile
-          </button>
-          {showProfilePicker && (
-            <div className="mt-2 w-full max-w-xs song-row p-2 flex flex-col gap-1">
-              {profileRegistry.map((name) => (
-                <button
-                  key={name}
-                  onClick={() => {
-                    if (name === PROFILE) {
-                      setShowProfilePicker(false);
-                      return;
-                    }
-                    const base = window.location.origin + window.location.pathname;
-                    window.location.href = `${base}?profile=${encodeURIComponent(name)}`;
-                  }}
-                  className={`w-full px-3 py-2 rounded-lg text-sm font-body text-left flex items-center justify-between ${
-                    name === PROFILE ? "text-amber" : "text-cream/70 hover:text-cream"
-                  }`}
-                >
-                  {name}
-                  {name === PROFILE && <span className="font-mono text-[10px]">(here)</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* request modal */}
       {activeSong && (
         <div
@@ -2449,6 +2394,8 @@ function AudienceView({
         </div>
       )}
 
+      {cooldownInfo && <CooldownPopup info={cooldownInfo} onClose={() => setCooldownInfo(null)} />}
+
       {tipPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 modal-backdrop">
           <div className="modal-card w-full max-w-xs rounded-2xl p-5 text-center">
@@ -2477,6 +2424,44 @@ function AudienceView({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Shown when someone requests a song that was played too recently
+function CooldownPopup({ info, onClose }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  const remainingMs = Math.max(0, info.availableAt - now);
+  const mins = Math.floor(remainingMs / 60000);
+  const secs = Math.floor((remainingMs % 60000) / 1000);
+  const done = remainingMs <= 0;
+  const availableTime = new Date(info.availableAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 modal-backdrop" onClick={onClose}>
+      <div className="modal-card w-full max-w-xs rounded-2xl p-5 text-center" onClick={(e) => e.stopPropagation()}>
+        <Timer size={26} className="text-amber mx-auto mb-3" />
+        <p className="font-display text-lg mb-1">Just played!</p>
+        <p className="font-body text-sm text-cream/60 mb-4">
+          "{info.title}" was already played in the last {PLAYED_COOLDOWN_MS / 60000} minutes, so it can't be requested again until {availableTime}.
+        </p>
+        <div className="mb-5">
+          <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-cream/40 mb-1">
+            {done ? "You can request it now" : "Available again in"}
+          </p>
+          {!done && (
+            <p className="font-display text-4xl text-amber">
+              {mins}:{String(secs).padStart(2, "0")}
+            </p>
+          )}
+        </div>
+        <button onClick={onClose} className="btn-amber w-full py-2.5 rounded-lg font-body">
+          Got it
+        </button>
+      </div>
     </div>
   );
 }
@@ -3033,7 +3018,7 @@ function ThemeDropdown({ config, setTheme }) {
 
 // ---------- Host dashboard ----------
 function HostView({
-  config, songs, setlists, requests, profileRegistry, addSongFromMissed,
+  config, songs, setlists, requests, addSongFromMissed,
   createSetlist, switchSetlist, renameSetlist, deleteSetlist, duplicateSetlist, importSongsFromSetlist, updateSong, toggleSongAvailability,
   muteAlerts, toggleMuteAlerts, toggleAutoClear,
   toggleLastCall, reactions,
@@ -3093,7 +3078,6 @@ function HostView({
   const [importResult, setImportResult] = useState(null);
   const [confirmingStart, setConfirmingStart] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
-  const [newProfileName, setNewProfileName] = useState("");
   const [editingSongId, setEditingSongId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [editArtist, setEditArtist] = useState("");
@@ -3789,74 +3773,6 @@ function HostView({
 
             <div className="mt-6 pt-5 border-t border-line">
               <ThemeDropdown config={config} setTheme={setTheme} />
-            </div>
-
-            <div className="mt-6 pt-5 border-t border-line">
-              <StatAccordion icon={ListPlus} title="Profiles" count={profileRegistry.length || undefined}>
-                <p className="font-body text-xs text-cream/40 mb-3 px-1">
-                  Everyone on this list shares this exact site, each with their own completely separate setlist, PIN, and sessions. Tap a name to switch this device there.
-                </p>
-                {profileRegistry.length > 0 && (
-                  <div className="flex flex-col gap-1.5 mb-3">
-                    {profileRegistry.map((name) => (
-                      <div key={name} className="song-row flex items-center justify-between px-3 py-2.5">
-                        <p className="font-body text-sm truncate">
-                          {name}
-                          {name === PROFILE && <span className="text-amber font-mono text-[11px] ml-1.5">(you)</span>}
-                        </p>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            onClick={async () => {
-                              const base = window.location.origin + window.location.pathname;
-                              await navigator.clipboard?.writeText(`${base}?profile=${encodeURIComponent(name)}`);
-                            }}
-                            aria-label="Copy this profile's link"
-                            className="btn-outline w-8 h-8 rounded-full flex items-center justify-center"
-                          >
-                            <Copy size={13} />
-                          </button>
-                          {name !== PROFILE && (
-                            <button
-                              onClick={() => {
-                                const base = window.location.origin + window.location.pathname;
-                                window.location.href = `${base}?profile=${encodeURIComponent(name)}`;
-                              }}
-                              className="btn-amber px-3 py-1.5 rounded-full text-xs font-body"
-                            >
-                              Switch
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="pt-3 border-t border-line">
-                  <p className="font-body text-xs font-semibold mb-2">Add a new profile</p>
-                  <div className="flex gap-2">
-                    <input
-                      value={newProfileName}
-                      onChange={(e) => setNewProfileName(e.target.value)}
-                      placeholder="Their name — e.g. alex"
-                      className="flex-1 px-3 py-2 rounded-lg text-sm font-body"
-                    />
-                    <button
-                      onClick={() => {
-                        const sanitized = newProfileName.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
-                        if (!sanitized) return;
-                        const base = window.location.origin + window.location.pathname;
-                        window.location.href = `${base}?profile=${encodeURIComponent(sanitized)}`;
-                      }}
-                      className="btn-amber px-3 rounded-lg shrink-0"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                  <p className="font-body text-[10px] text-cream/30 mt-2">
-                    This switches this device straight there to do its one-time setup — once finished, it'll show up in this list for everyone, ready to tap.
-                  </p>
-                </div>
-              </StatAccordion>
             </div>
 
             <div className="mt-6 pt-5 border-t border-line">
