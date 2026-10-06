@@ -3047,11 +3047,17 @@ function markStyle(taskId, i) {
 function markingBoxes(t, compact) {
   const m = t.marking;
   if (!m || !m.total) return `<form class="inline-form mark-set" data-form="mark-set" data-id="${t.id}"><input class="input" name="n" type="number" min="1" max="400" inputmode="numeric" placeholder="How many to mark?" aria-label="How many to mark" style="max-width:190px"><button class="btn small" type="submit">Make boxes</button></form>`;
-  const done = (m.done || []).length;
-  return `<div class="mark-head"><b>${done} of ${m.total} marked</b><span class="mark-bar"><i style="width:${Math.round(done / m.total * 100)}%"></i></span>
-      ${done === m.total ? `<button class="btn small primary" data-action="toggle-task" data-id="${t.id}">All marked. Tick it off</button>` : ''}
+  const done = (m.done || []).length, p = markProgress(t);
+  return `<div class="mark-head"><b>${done} of ${m.total} marked${p.steps ? `, ${p.stepsDone} of ${p.steps} step${p.steps === 1 ? '' : 's'}` : ''}${p.steps ? `, ${p.pct}%` : ''}</b><span class="mark-bar"><i style="width:${p.pct}%"></i></span>
+      ${p.complete ? `<button class="btn small primary" data-action="toggle-task" data-id="${t.id}">${p.steps ? 'All done' : 'All marked'}. Tick it off</button>` : done === m.total && p.steps ? `<span class="muted" style="font-size:13px">All marked, ${p.steps - p.stepsDone} step${p.steps - p.stepsDone === 1 ? '' : 's'} to go</span>` : ''}
       <span class="mini"><button data-action="mark-add" data-id="${t.id}" data-d="-1" aria-label="One fewer box">−</button><button data-action="mark-add" data-id="${t.id}" data-d="1" aria-label="One more box">+</button></span></div>
     <div class="mark-grid ${compact ? 'compact' : ''}">${Array.from({ length: m.total }, (_, i) => { const on = (m.done || []).includes(i); const fx = on ? markStyle(t.id, i) : null; return `<button class="mark-box ${on ? 'on p-' + fx.pat : ''}" ${on ? `style="--mc:${fx.c}"` : ''} data-action="mark-t" data-id="${t.id}" data-i="${i}" aria-pressed="${on}" aria-label="${m.labels && m.labels[i] ? esc(m.labels[i]) : 'Piece ' + (i + 1)}${on ? ', marked' : ''}">${on ? `<span>${fx.sym}</span>` : i + 1}</button>`; }).join('')}</div>`;
+}
+/** Progress across marking boxes and steps together. */
+function markProgress(t) {
+  const m = t.marking || { total: 0, done: [] }, steps = (t.steps || []).length, stepsDone = (t.steps || []).filter(s => s.done).length;
+  const total = (m.total || 0) + steps, done = (m.done || []).length + stepsDone;
+  return { total, done, steps, stepsDone, pct: total ? Math.round(done / total * 100) : 0, complete: total > 0 && done === total };
 }
 function markingRow(t) {
   return `<div class="mark-item"><div class="row" style="border:0;padding:0 0 6px"><button class="check" data-action="toggle-task" data-id="${t.id}" aria-label="Mark ${esc(t.title)} done"></button><div class="row-main"><button class="row-title" data-action="open-task" data-id="${t.id}">${esc(t.title)}</button></div>${t.due ? `<span class="chip ${D.diff(t.due) < 0 ? 'late' : D.diff(t.due) <= 1 ? 'warn' : ''}">${D.diff(t.due) < 0 ? `${plural(-D.diff(t.due), 'day')} late` : D.label(t.due)}</span>` : ''}<button class="row-del" data-action="del-task" data-id="${t.id}" aria-label="Delete ${esc(t.title)}" title="Delete">×</button></div>${markingBoxes(t, true)}</div>`;
@@ -3292,7 +3298,7 @@ function setCash(g, on) {
 LIBS.pizzip = 'https://cdn.jsdelivr.net/npm/pizzip@3.1.6/dist/pizzip.js';
 LIBS.docxtemplater = 'https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.45.0/docxtemplater.js';
 const INVOICE_FIELDS = [
-  ['invoice_number', 'Invoice number, e.g. INV-007'], ['invoice_date', 'Today’s date'], ['due_date', 'Payment due date'],
+  ['invoice_number', 'Invoice name, e.g. Invoice - Duporth Tavern - 16 Oct 2026'], ['invoice_date', 'Today’s date'], ['due_date', 'Payment due date'],
   ['venue', 'Venue name'], ['venue_contact', 'Venue contact'], ['gig_date', 'Date of the gig'], ['gig_day', 'Day of the gig'],
   ['gig_time', 'Start and finish time'], ['description', 'e.g. Live music performance, 7pm to 10pm'], ['amount', 'Fee, e.g. $450.00'],
   ['amount_number', 'Fee without the $ sign'], ['business_name', 'Your business name'], ['my_name', 'Your name'], ['abn', 'Your ABN'],
@@ -3306,7 +3312,7 @@ const INVOICE_ALIASES = { date: 'invoice_date', today: 'invoice_date', invoice_n
   terms: 'payment_terms', due: 'due_date' };
 const invKey = tag => { const k = String(tag).trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, ''); return INVOICE_ALIASES[k] || k; };
 const INVOICE_DEFAULTS = {   // personal details live in your saved data, never in the page itself
-  business: '', name: '', address: '', email: '', phone: '', abn: '', accountName: '', bsb: '', accountNumber: '',
+  business: 'Mitch Dean Music', name: '', address: '', email: '', phone: '', abn: '', accountName: '', bsb: '', accountNumber: '',
   termsDays: 7, prefix: '', next: 1, style: 'pdf'
 };
 const invSettings = () => {
@@ -3317,6 +3323,7 @@ const invSettings = () => {
     s.invoice.seeded = true;
   }
   if (!Array.isArray(s.invoiceLog)) s.invoiceLog = [];
+  if (!s.invoice.renamedBusiness) { if (!s.invoice.business || /^mitchde music$/i.test(s.invoice.business)) s.invoice.business = 'Mitch Dean Music'; s.invoice.renamedBusiness = true; }
   return s.invoice;
 };
 function invoiceData(g) {
@@ -3325,7 +3332,7 @@ function invoiceData(g) {
   const full = s => D.parse(s).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
   const hosting = isHosting(g), what = hosting ? (g.venue.match(/\(([^)]+)\)/) || [, 'hosting'])[1] : 'live music';
   return {
-    invoice_number: g.invoiceNo || '', invoice_date: full(issued), due_date: full(due),
+    invoice_number: invoiceLabel(g), invoice_title: invoiceLabel(g), invoice_date: full(issued), due_date: full(due),
     venue: venueBaseName(g.venue), venue_contact: v.contact || '', gig_date: full(g.date), gig_day: D.parse(g.date).toLocaleDateString('en-AU', { weekday: 'long' }),
     gig_time: g.time ? D.time(g.time) + (g.endTime ? ' to ' + D.time(g.endTime) : '') : '',
     description: `${cap(what)} performance at ${venueBaseName(g.venue)}, ${full(g.date)}${g.time ? `, ${D.time(g.time)}${g.endTime ? ' to ' + D.time(g.endTime) : ''}` : ''}`,
@@ -3412,7 +3419,7 @@ async function invoicePdf(g) {
   set('bold', 11); doc.text('From:', L, 40);
   set('normal', 10.5);
   [inv.name, inv.address, inv.email, inv.phone, inv.abn ? `ABN: ${inv.abn}` : ''].filter(Boolean).forEach((t, i) => doc.text(String(t), L, 46 + i * 5.5));
-  const rows = [['Invoice Number:', g.invoiceNo], ['Invoice Date:', dmy(issued)], ['Due Date:', `${dmy(due)} (${+inv.termsDays || 7} days)`]];
+  const rows = [['Invoice Date:', dmy(issued)], ['Due Date:', `${dmy(due)} (${+inv.termsDays || 7} days)`], ['Gig:', `${line.venue}, ${invoiceDate(g)}`]];
   rows.forEach(([k, val], i) => { set('bold', 10.5); doc.text(k, 118, 40 + i * 6); set('normal', 10.5); doc.text(String(val), 150, 40 + i * 6); });
   set('bold', 10.5); doc.text('Bill To:', 118, 62); set('normal', 10.5);
   [line.venue, v.contact].filter(Boolean).forEach((t, i) => doc.text(doc.splitTextToSize(String(t), 70), 118, 68 + i * 5.5));
@@ -3430,16 +3437,19 @@ async function invoicePdf(g) {
   // payment
   let y = after + 28;
   set('bold', 11); doc.text('Payment Details:', L, y); set('normal', 10.5);
-  ['Bank Transfer', inv.accountName || inv.name, inv.bsb ? `BSB: ${inv.bsb}` : '', inv.accountNumber ? `Account: ${inv.accountNumber}` : '', `Reference: ${g.invoiceNo}`].filter(Boolean)
+  ['Bank Transfer', inv.accountName || inv.name, inv.bsb ? `BSB: ${inv.bsb}` : '', inv.accountNumber ? `Account: ${inv.accountNumber}` : '', `Reference: ${venueBaseName(g.venue)} ${invoiceDate(g)}`].filter(Boolean)
     .forEach((t, i) => doc.text(String(t), L, y + 6 + i * 5.5));
   y += 6 + 5 * 5.5 + 10;
   set('italic', 11); doc.text('Thank you for your business!', L, y);
   return doc.output('blob');
 }
 /** Build one invoice file for a gig that already has a number. */
+/** Invoices are named, not numbered: "Invoice - Duporth Tavern - 16 Oct 2026". */
+const invoiceDate = g => D.parse(g.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).replace(/\./g, '');
+const invoiceLabel = g => `Invoice - ${venueBaseName(g.venue)} - ${invoiceDate(g)}`;
 async function buildInvoiceFile(g) {
   const st = S(), inv = invSettings(), data = invoiceData(g), tpl = st.invoiceTemplate;
-  const base = `Invoice ${g.invoiceNo} - ${venueBaseName(g.venue)} ${g.date}`.replace(/[\\/:*?"<>|]+/g, '');
+  const base = invoiceLabel(g).replace(/[\\/:*?"<>|]+/g, '');
   const style = inv.style === 'template' && tpl ? 'template' : 'pdf';
   if (style === 'pdf') return { blob: await invoicePdf(g), filename: `${base}.pdf`, unknown: [] };
   if (tpl.kind === 'text') {
@@ -3453,7 +3463,7 @@ async function buildInvoiceFile(g) {
 /** Every invoice for gigs in a financial year, in one zip with an index spreadsheet. */
 async function downloadInvoicesZip(y) {
   const r = fyRange(y), gigs = S().gigs.filter(g => g.invoiceNo && g.date >= r.start && g.date <= r.end)
-    .sort((a, b) => String(a.invoiceNo).localeCompare(String(b.invoiceNo), undefined, { numeric: true }));
+    .sort(byDate);
   if (!gigs.length) { toast(`No invoices made for gigs in ${r.label} yet.`); return; }
   toast(`Making ${plural(gigs.length, 'invoice')} for ${r.label}…`);
   try {
@@ -3464,7 +3474,7 @@ async function downloadInvoicesZip(y) {
       try {
         const f = await buildInvoiceFile(g);
         zip.file(f.filename, new Uint8Array(await f.blob.arrayBuffer()), { binary: true });
-        index.push([g.invoiceNo, venueBaseName(g.venue), g.date, (gigFee(g) || 0).toFixed(2), g.invoicedAt || '', g.paid ? (g.paidAt || 'Yes') : 'No', f.filename]);
+        index.push([invoiceLabel(g), venueBaseName(g.venue), g.date, (gigFee(g) || 0).toFixed(2), g.invoicedAt || '', g.paid ? (g.paidAt || 'Yes') : 'No', f.filename]);
       } catch (e) { failed++; if (e && e.message === 'load') throw e; }
     }
     zip.file(`Invoice list ${r.label.replace('–', '-')}.csv`, '\ufeff' + csvRows(index));
@@ -3485,7 +3495,7 @@ async function generateInvoice(id) {
   const g = gigById(id); if (!g) return;
   if (g.fee == null) { openGigModal(id); toast('Add the fee first, then generate the invoice.'); return; }
   const st = S(), inv = invSettings(), snap = Store.snapshot();
-  if (!g.invoiceNo) { g.invoiceNo = (inv.prefix || '') + String(+inv.next || 1).padStart(3, '0'); inv.next = (+inv.next || 1) + 1; }
+  g.invoiceNo = invoiceLabel(g);   // kept as the invoice's name (no numbering)
   toast('Making the invoice…');
   try {
     const firstTime = !g.invoicedAt;
@@ -3501,7 +3511,7 @@ async function generateInvoice(id) {
     (g.checklist || []).forEach(c => { if (/invoice/i.test(c.text)) c.done = true; });
     commit();
     const missing = !inv.name && !inv.business ? ' Add your name and bank details in Invoice template and details.' : '';
-    toast(`${g.invoiceNo} saved and ${venueBaseName(g.venue)} marked as invoiced.${unknown.length ? ` Unrecognised placeholders left blank: ${unknown.slice(0, 3).join(', ')}.` : ''}${missing}`, snap);
+    toast(`${invoiceLabel(g)} saved, and ${venueBaseName(g.venue)} marked as invoiced.${unknown.length ? ` Unrecognised placeholders left blank: ${unknown.slice(0, 3).join(', ')}.` : ''}${missing}`, snap);
   } catch (e) {
     Store.restore(snap); render();
     toast(e && e.message === 'load' ? 'Couldn’t load the invoice tools. They need the internet the first time.'
@@ -3512,14 +3522,14 @@ async function generateInvoice(id) {
 /** Undo an invoice made by mistake: frees the gig and, if it was the latest, its number. */
 function deleteInvoice(gigId) {
   const st = S(), g = gigById(gigId), inv = invSettings(); if (!g || (!g.invoiceNo && !g.invoiced)) return;
-  const snap = Store.snapshot(), no = g.invoiceNo || '';
+  const snap = Store.snapshot(), no = g.invoiceNo ? invoiceLabel(g) : '';
   const num = parseInt(String(no).replace(/^\D+/, ''), 10);
-  if (!isNaN(num) && num === (+inv.next || 1) - 1 && String(no).startsWith(inv.prefix || '')) inv.next = num;
+
   st.invoiceLog = (st.invoiceLog || []).filter(x => !(x.gigId === g.id && x.no === no));
   Object.assign(g, { invoiceNo: null, invoiced: false, invoicedAt: null, paid: false, paidAt: null });
   (g.checklist || []).forEach(c => { if (/invoice/i.test(c.text)) c.done = false; });
   closeOverlay(); commit();
-  toast(no ? `Invoice ${no} deleted${inv.next === num ? `; ${no} will be used again next` : ''}. Delete the downloaded file too if you saved it.` : `Invoice for ${venueBaseName(g.venue)} removed`, snap);
+  toast(no ? `${no} deleted. Delete the downloaded file too if you saved it.` : `Invoice for ${venueBaseName(g.venue)} removed`, snap);
 }
 async function downloadStarterTemplate() {
   try { await loadDocxLibs(); await saveFile(starterTemplateZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'Invoice template (Mitchs Dashboard).docx'); }
@@ -3554,8 +3564,8 @@ function openInvoiceSettings() {
     <h3 style="margin:0 0 6px">Invoice format</h3>
     <div class="seg" role="group" aria-label="Invoice format" style="margin-bottom:6px"><button class="${inv.style !== 'template' ? 'on' : ''}" data-action="inv-style" data-s="pdf">PDF in your MitchDe Music layout</button><button class="${inv.style === 'template' ? 'on' : ''}" data-action="inv-style" data-s="template">Your Word template</button></div>
     <p class="muted" style="margin:0 0 18px;font-size:14px">${inv.style === 'template' ? 'Invoices fill in your uploaded Word template below.' : 'Invoices are PDFs laid out like your example invoice, with the gig’s date, time, hourly rate and amount filled in, plus who to bill.'}</p>
-    ${(() => { const st = S(); st.invoiceLog = st.invoiceLog || []; st.gigs.filter(g => g.invoiceNo && !st.invoiceLog.some(x => x.gigId === g.id)).forEach(g => st.invoiceLog.push({ no: g.invoiceNo, gigId: g.id, venue: venueBaseName(g.venue), gigDate: g.date, amount: +g.fee || 0, createdAt: g.invoicedAt || g.date })); st.invoiceLog = st.invoiceLog.filter(x => { const g = gigById(x.gigId); return g && g.invoiceNo === x.no; }).sort((a, b) => String(b.no).localeCompare(String(a.no), undefined, { numeric: true })); return ''; })()}
-    ${(S().invoiceLog || []).length ? `<div class="teach-head" style="margin-bottom:6px"><h3 style="margin:0">Invoices you’ve made</h3><button class="btn small" data-action="inv-zip-open">Download a financial year as a zip</button></div><div class="scroll-x" style="margin-bottom:18px"><table class="tbl"><thead><tr><th>Number</th><th>Venue</th><th>Gig date</th><th class="num">Amount</th><th>Made</th><th></th></tr></thead><tbody>${S().invoiceLog.map(x => `<tr><td>${esc(x.no)}</td><td>${esc(x.venue)}</td><td>${D.label(x.gigDate)}</td><td class="num">${aud(x.amount)}</td><td>${D.rel(x.createdAt)}</td><td>${gigById(x.gigId) ? `<button class="linkbtn" data-action="gig-gen-invoice" data-id="${x.gigId}">Download</button> <button class="linkbtn danger-link" data-action="inv-delete" data-id="${x.gigId}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${(() => { const st = S(); st.invoiceLog = st.invoiceLog || []; st.gigs.filter(g => g.invoiceNo && !st.invoiceLog.some(x => x.gigId === g.id)).forEach(g => st.invoiceLog.push({ no: g.invoiceNo, gigId: g.id, venue: venueBaseName(g.venue), gigDate: g.date, amount: +g.fee || 0, createdAt: g.invoicedAt || g.date })); st.invoiceLog = st.invoiceLog.filter(x => { const g = gigById(x.gigId); return g && g.invoiceNo; }).sort((a, b) => String(b.gigDate).localeCompare(String(a.gigDate))); return ''; })()}
+    ${(S().invoiceLog || []).length ? `<div class="teach-head" style="margin-bottom:6px"><h3 style="margin:0">Invoices you’ve made</h3><button class="btn small" data-action="inv-zip-open">Download a financial year as a zip</button></div><div class="scroll-x" style="margin-bottom:18px"><table class="tbl"><thead><tr><th>Invoice</th><th>Venue</th><th>Gig date</th><th class="num">Amount</th><th>Made</th><th></th></tr></thead><tbody>${S().invoiceLog.map(x => `<tr><td>${esc(gigById(x.gigId) ? invoiceLabel(gigById(x.gigId)) : x.no)}</td><td>${esc(x.venue)}</td><td>${D.label(x.gigDate)}</td><td class="num">${aud(x.amount)}</td><td>${D.rel(x.createdAt)}</td><td>${gigById(x.gigId) ? `<button class="linkbtn" data-action="gig-gen-invoice" data-id="${x.gigId}">Download</button> <button class="linkbtn danger-link" data-action="inv-delete" data-id="${x.gigId}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <h3 style="margin:0 0 6px">Word template</h3>
     <p style="margin:0 0 10px">${t ? `Using <b>${esc(t.name)}</b>, uploaded ${D.rel(t.uploadedAt)}${t.tags ? `, ${plural(t.tags, 'placeholder')}` : ', <span class="warn" style="color:var(--warn)">no placeholders found</span>'}.` : 'No template uploaded yet, so invoices use the built-in starter layout.'}</p>
     <div class="inline-form" style="margin-bottom:8px"><button class="btn primary" data-action="inv-upload">${t ? 'Replace template' : 'Upload your template'}</button><button class="btn" data-action="inv-starter">Download starter template</button>${t ? '<button class="btn ghost" data-action="inv-remove">Remove template</button>' : ''}</div>
@@ -3571,7 +3581,7 @@ function openInvoiceSettings() {
       ${f('phone', 'Phone')}${f('address', 'Address', 'Optional')}
       ${f('accountName', 'Bank account name')}${f('bsb', 'BSB', '000-000')}
       ${f('accountNumber', 'Account number')}${f('termsDays', 'Days to pay', '14', 'number')}
-      ${f('prefix', 'Invoice number prefix', 'Leave blank for 001, 002…')}${f('next', 'Next invoice number', '2', 'number')}
+
       <div class="modal-foot full"><button class="btn primary" type="submit">Save details</button></div>
     </form>
   </div></div>`;
@@ -4013,7 +4023,7 @@ function openMusicSettings(tab) {
 /** Invoice cell for the Payments table: number, download and delete wherever an invoice exists. */
 function invoiceCell(g) {
   if (g.cash) return '<span class="muted">Not needed</span>';
-  if (g.invoiceNo) return `<span class="inv-cell"><span class="pill ready">${esc(g.invoiceNo)}</span><button class="linkbtn" data-action="gig-gen-invoice" data-id="${g.id}">Download</button><button class="linkbtn danger-link" data-action="inv-delete" data-id="${g.id}">Delete</button></span>`;
+  if (g.invoiceNo) return `<span class="inv-cell"><span class="pill ready" title="${esc(invoiceLabel(g))}">Sent</span><button class="linkbtn" data-action="gig-gen-invoice" data-id="${g.id}">Download</button><button class="linkbtn danger-link" data-action="inv-delete" data-id="${g.id}">Delete</button></span>`;
   if (g.invoiced) return `<span class="inv-cell"><span class="pill ready" title="Marked as sent">Sent</span><button class="linkbtn" data-action="gig-gen-invoice" data-id="${g.id}">Generate</button><button class="linkbtn danger-link" data-action="inv-delete" data-id="${g.id}">Delete</button></span>`;
   return `<span class="inv-cell">${D.diff(g.date) < 0 ? `<button class="pill learning" data-action="gig-invoice" data-id="${g.id}" title="Mark as sent without generating one">Not yet</button>` : ''}<button class="linkbtn" data-action="gig-gen-invoice" data-id="${g.id}">Generate</button></span>`;
 }
@@ -4129,7 +4139,7 @@ function viewMusic() {
       <div class="gig-actions">
         ${r.hosting ? '<span class="muted" style="font-size:14px;align-self:center">Hosting gig, no rehearsal needed</span>' : `<button class="btn small" data-action="gig-rehearse" data-id="${g.id}">Log rehearsal (${r.reh})</button>`}
         <button class="btn small ghost" data-action="gig-edit" data-id="${g.id}">${g.fee == null ? 'Add fee and notes' : 'Edit'}</button>
-        ${g.cash ? '' : g.invoiceNo ? `<button class="btn small ghost" data-action="gig-gen-invoice" data-id="${g.id}" title="Download invoice ${esc(g.invoiceNo)} again">Invoice ${esc(g.invoiceNo)}</button><button class="btn small ghost danger-link" data-action="inv-delete" data-id="${g.id}">Delete invoice</button>` : g.invoiced ? `<button class="btn small ghost" data-action="gig-gen-invoice" data-id="${g.id}">Generate invoice</button><button class="btn small ghost danger-link" data-action="inv-delete" data-id="${g.id}">Delete invoice</button>` : `<button class="btn small ghost" data-action="gig-gen-invoice" data-id="${g.id}">Generate invoice</button>`}
+        ${g.cash ? '' : g.invoiceNo ? `<button class="btn small ghost" data-action="gig-gen-invoice" data-id="${g.id}" title="Download ${esc(invoiceLabel(g))} again">Download invoice</button><button class="btn small ghost danger-link" data-action="inv-delete" data-id="${g.id}">Delete invoice</button>` : g.invoiced ? `<button class="btn small ghost" data-action="gig-gen-invoice" data-id="${g.id}">Generate invoice</button><button class="btn small ghost danger-link" data-action="inv-delete" data-id="${g.id}">Delete invoice</button>` : `<button class="btn small ghost" data-action="gig-gen-invoice" data-id="${g.id}">Generate invoice</button>`}
         <label class="cash-tick"><input type="checkbox" data-change="gig-cash" data-id="${g.id}" ${g.cash ? 'checked' : ''}> Cash job, no invoice</label>
         ${g.link ? `<a class="btn small ghost" href="${esc(g.link)}" target="_blank" rel="noopener">Open in Google Calendar</a>` : ''}
         ${g.source === 'calendar' && !g.missing ? '' : `<button class="btn small ghost" data-action="gig-delete" data-id="${g.id}">Delete gig</button>`}
@@ -5467,7 +5477,7 @@ const ACTIONS = {
   'bud-fy'(el) { const st = S(), y = +el.dataset.y, s = st.settings.open_budfy || (st.settings.open_budfy = [fyOfDate(D.today())]), i = s.indexOf(y); if (i >= 0) s.splice(i, 1); else s.push(y); Store.save(); render(); },
   'bud-chart'(el) { budChartPeriod = el.dataset.p; render(); },
   'bud-chart-what'(el) { budChartWhat = el.dataset.w; render(); },
-  'mark-t'(el) { const t = taskById(el.dataset.id); if (!t || !t.marking) return; const i = +el.dataset.i, d = t.marking.done || (t.marking.done = []); const k = d.indexOf(i); if (k >= 0) d.splice(k, 1); else d.push(i); Store.save(); render(); refreshTaskExtras(t.id); if (d.length === t.marking.total) toast(`All ${t.marking.total} marked for ${t.title}`); },
+  'mark-t'(el) { const t = taskById(el.dataset.id); if (!t || !t.marking) return; const i = +el.dataset.i, d = t.marking.done || (t.marking.done = []); const k = d.indexOf(i); if (k >= 0) d.splice(k, 1); else d.push(i); Store.save(); render(); refreshTaskExtras(t.id); if (d.length === t.marking.total) { const pr = markProgress(t); toast(pr.complete ? `All ${t.marking.total} marked for ${t.title}` : `All ${t.marking.total} marked. ${pr.steps - pr.stepsDone} step${pr.steps - pr.stepsDone === 1 ? '' : 's'} left for ${t.title}`); } },
   'mark-add'(el) { const t = taskById(el.dataset.id); if (!t || !t.marking) return; t.marking.total = Math.max(1, Math.min(400, t.marking.total + +el.dataset.d)); t.marking.done = (t.marking.done || []).filter(i => i < t.marking.total); Store.save(); render(); refreshTaskExtras(t.id); },
   'del-task'(el) {
     const st = S(), t = taskById(el.dataset.id); if (!t) return;
@@ -5779,8 +5789,8 @@ function boot() {
       closeOverlay(); commit(); toast('Gig saved');
     } else if (kind === 'inv-details') {
       const inv = invSettings();
-      ['name', 'business', 'abn', 'email', 'phone', 'address', 'accountName', 'bsb', 'accountNumber', 'prefix'].forEach(k => { inv[k] = val(k); }); inv.seeded = true;
-      inv.termsDays = Math.max(1, +val('termsDays') || 14); inv.next = Math.max(1, +val('next') || 1);
+      ['name', 'business', 'abn', 'email', 'phone', 'address', 'accountName', 'bsb', 'accountNumber'].forEach(k => { if (f.elements[k]) inv[k] = val(k); }); inv.seeded = true;
+      inv.termsDays = Math.max(1, +val('termsDays') || 7);
       Store.save(); closeOverlay(); toast('Invoice details saved');
     } else if (kind === 'sl-rename') {
       const sl = setlistById(activeSetlist); if (!sl || !val('name')) return; sl.name = val('name'); commit(); toast('Setlist renamed');
