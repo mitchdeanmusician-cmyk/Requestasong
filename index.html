@@ -780,6 +780,7 @@ tr.bdrop-after td{box-shadow:inset 0 -3px 0 var(--accent)}
 .bills-due .row{padding:6px 0}
 .todo-add{margin-bottom:10px}
 .todo-add input[type=date]{flex:0 0 auto;width:auto;padding:6px 8px;font-size:14px;color:var(--ink-2)}
+.app-version{display:block;font-size:11.5px;color:var(--muted);padding:6px 10px 0;opacity:.8}
 </style>
 </head>
 <body>
@@ -791,6 +792,7 @@ tr.bdrop-after td{box-shadow:inset 0 -3px 0 var(--accent)}
       <div class="ai-status" id="ai-status"><span class="dot"></span><span>Built-in assistant</span></div>
       <button class="ai-status" id="cal-status" data-action="cal-open"><span class="dot"></span><span>Google Calendar</span></button>
       <button class="ai-status" id="sync-status" data-action="cal-open" hidden><span class="dot"></span><span>Sync</span></button>
+      <span class="app-version" id="app-version"></span>
       <button data-action="ai-settings">Teaching partner settings</button>
       <button data-action="theme">Switch light / dark</button>
       <button data-action="export">Export a backup</button>
@@ -2167,6 +2169,7 @@ function loadFeedViaScript(url, anonymous) {
    other device's changes when opened or switched back to. Newest change wins. Calendar events,
    receipt files and your API key stay on each device. */
 /** Each device knows what it is, so sync messages can say "your phone" or "your Mac". */
+const APP_VERSION = '2026-10-01 · invoices by venue';   // shown in the sidebar and More, so you can check which version is running
 const DEVICE_KEY = 'mitch-dashboard-device';
 function deviceName() {
   try { const n = localStorage.getItem(DEVICE_KEY); if (n) return n; } catch (e) {}
@@ -2744,6 +2747,7 @@ function safeRender() { if (viewBusy()) { pendingRender = true; return; } pendin
 function render() {
   const dumpVal = $('#dump')?.value;
   renderNav(); renderCalStatus(); renderSyncStatus(); renderTabbar();
+  { const v = $('#app-version'); if (v) v.textContent = 'Version ' + APP_VERSION; }
   const v = { today: viewToday, inbox: viewInbox, teaching: viewTeaching, music: viewMusic, life: viewLife, budget: viewBudget, fitness: viewFitness, someday: viewSomeday }[VIEW];
   $('#view').innerHTML = v();
   if (dumpVal && $('#dump')) $('#dump').value = dumpVal;
@@ -5636,6 +5640,7 @@ function openMoreSheet() {
     ${item('theme', 'Switch light or dark', '')}
     ${item('export', 'Export a backup', '')}
     ${item('import', 'Import a backup', '')}
+    <p class="app-version" style="padding:8px 8px 0">Version ${APP_VERSION}</p>
   </div></div>`;
 }
 let capMode = 'auto';
